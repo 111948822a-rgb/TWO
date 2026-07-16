@@ -1,0 +1,3216 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark-pro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Commerce Video Studio · V9.0 Flagship</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* ======================================================================
+       V8.0 多主题 CSS 变量系统
+       ====================================================================== */
+    :root, [data-theme="dark-pro"] {
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #141414;
+      --bg-tertiary: #1a1a1a;
+      --bg-hover: #222222;
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+      --border-color: #2a2a2a;
+      --accent-color: #3b82f6;
+      --accent-hover: #2563eb;
+      --accent-gradient: linear-gradient(to right, #3b82f6, #8b5cf6);
+      --danger-color: #ef4444;
+      --success-color: #10b981;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --sidebar-bg: #0d0d0d;
+    }
+    [data-theme="apple-light"] {
+      --bg-primary: #ffffff;
+      --bg-secondary: #f5f5f7;
+      --bg-tertiary: #fafafa;
+      --bg-hover: #ececee;
+      --text-primary: #1d1d1f;
+      --text-secondary: #86868b;
+      --text-muted: #aeaeb2;
+      --border-color: #e5e5e7;
+      --accent-color: #0071e3;
+      --accent-hover: #0058b0;
+      --accent-gradient: linear-gradient(to right, #0071e3, #00c7ff);
+      --danger-color: #ff3b30;
+      --success-color: #34c759;
+      --shadow: 0 4px 24px rgba(0,0,0,0.08);
+      --sidebar-bg: #f5f5f7;
+    }
+    [data-theme="cyberpunk"] {
+      --bg-primary: #0d0221;
+      --bg-secondary: #190b2e;
+      --bg-tertiary: #261447;
+      --bg-hover: #321a5c;
+      --text-primary: #e0e0ff;
+      --text-secondary: #8888aa;
+      --text-muted: #555577;
+      --border-color: #3a1a5c;
+      --accent-color: #ff00ff;
+      --accent-hover: #cc00cc;
+      --accent-gradient: linear-gradient(to right, #ff00ff, #00ffff);
+      --danger-color: #ff0066;
+      --success-color: #00ff88;
+      --shadow: 0 4px 24px rgba(255,0,255,0.15);
+      --sidebar-bg: #0a0118;
+    }
+    [data-theme="nature"] {
+      --bg-primary: #f5f7f2;
+      --bg-secondary: #ebeee5;
+      --bg-tertiary: #f0f3eb;
+      --bg-hover: #dfe4d4;
+      --text-primary: #2d3b1f;
+      --text-secondary: #6b7a5c;
+      --text-muted: #9aa882;
+      --border-color: #d4dcc8;
+      --accent-color: #4a7c2e;
+      --accent-hover: #3a6620;
+      --accent-gradient: linear-gradient(to right, #4a7c2e, #7ba05b);
+      --danger-color: #c0392b;
+      --success-color: #27ae60;
+      --shadow: 0 4px 24px rgba(74,124,46,0.1);
+      --sidebar-bg: #e8ece0;
+    }
+
+    /* ======================================================================
+       全局基础样式
+       ====================================================================== */
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      margin: 0; padding: 0;
+      transition: background 0.3s, color 0.3s;
+    }
+    .app-layout { display: flex; min-height: 100vh; }
+
+    /* Sidebar */
+    .sidebar {
+      width: 240px; flex-shrink: 0;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border-color);
+      display: flex; flex-direction: column;
+      position: sticky; top: 0; height: 100vh;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    .sidebar-logo {
+      padding: 20px 16px; display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .sidebar-logo-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--accent-gradient);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .sidebar-nav { flex: 1; padding: 12px 8px; display: flex; flex-direction: column; gap: 4px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px; border-radius: 10px;
+      cursor: pointer; transition: background 0.2s;
+      color: var(--text-secondary); font-size: 14px; font-weight: 500;
+      border: none; background: none; width: 100%; text-align: left;
+    }
+    .nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .nav-item.active { background: var(--bg-hover); color: var(--accent-color); }
+    .nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .sidebar-footer { padding: 12px; border-top: 1px solid var(--border-color); }
+
+    /* Main Content */
+    .main-content { flex: 1; overflow-x: hidden; }
+    .view { display: none; }
+    .view.active { display: block; }
+    #view-agent.active { display: flex; }
+    .agent-quick {
+      padding: 12px 14px; border-radius: 12px; cursor: pointer; text-align: left;
+      background: var(--bg-tertiary); border: 1px solid var(--border-color);
+      color: var(--text-primary); font-size: 12px; font-weight: 500;
+      transition: all 0.2s;
+    }
+    .agent-quick:hover { border-color: var(--accent-color); background: var(--bg-hover); }
+    .agent-msg { display: flex; gap: 10px; max-width: 760px; }
+    .agent-msg-user { align-self: flex-end; flex-direction: row-reverse; }
+    .agent-avatar { width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+    .agent-avatar-ai { background: var(--accent-gradient); }
+    .agent-avatar-user { background: var(--bg-hover); }
+    .agent-bubble { padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.6; word-break: break-word; }
+    .agent-bubble-ai { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-top-left-radius: 4px; }
+    .agent-bubble-user { background: var(--accent-color); color: #fff; border-top-right-radius: 4px; }
+    .agent-bubble-ai p { margin: 0 0 8px; } .agent-bubble-ai p:last-child { margin: 0; }
+    .agent-bubble-ai code { background: var(--bg-hover); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    .agent-card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-top: 8px; }
+    .agent-card-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .typing-cursor { display: inline-block; width: 6px; height: 14px; background: var(--accent-color); margin-left: 2px; animation: blink 1s infinite; vertical-align: middle; }
+    @keyframes blink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0; } }
+
+    /* Generic components */
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    .input-base {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: 10px;
+      padding: 10px 14px; font-size: 14px;
+      transition: all 0.2s ease;
+      width: 100%;
+    }
+    .input-base:hover { border-color: var(--text-muted); }
+    .input-base:focus {
+      outline: none;
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+      transform: scale(1.005);
+    }
+    .input-base::placeholder { color: var(--text-muted); }
+    .btn-primary {
+      background: var(--accent-gradient);
+      color: #fff; border: none; border-radius: 12px;
+      padding: 12px 24px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary {
+      background: var(--bg-tertiary); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 10px;
+      padding: 8px 16px; font-size: 13px; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-secondary:hover { background: var(--bg-hover); }
+    .btn-danger {
+      background: transparent; color: var(--danger-color);
+      border: 1px solid var(--danger-color); border-radius: 8px;
+      padding: 6px 12px; font-size: 12px; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-danger:hover { background: var(--danger-color); color: #fff; }
+
+    /* iOS Toggle */
+    .ios-toggle {
+      appearance: none; -webkit-appearance: none;
+      position: relative; width: 44px; height: 26px;
+      border-radius: 13px; background: var(--bg-hover);
+      transition: background 0.3s; cursor: pointer; flex-shrink: 0;
+      border: 1px solid var(--border-color);
+    }
+    .ios-toggle::before {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      transition: transform 0.3s;
+    }
+    .ios-toggle:checked { background: var(--accent-gradient); border-color: transparent; }
+    .ios-toggle:checked::before { transform: translateX(18px); }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-overlay.hidden { display: none; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* Pill selector (vibe) */
+    .pill {
+      padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+      border: 1px solid var(--border-color); background: var(--bg-tertiary);
+      color: var(--text-secondary);
+    }
+    .pill.active {
+      background: var(--accent-gradient); color: #fff; border-color: transparent;
+    }
+
+    /* Progress bar */
+    .progress-bar {
+      height: 6px; border-radius: 3px; background: var(--bg-hover); overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; border-radius: 3px;
+      background: var(--accent-gradient);
+      transition: width 0.5s ease;
+    }
+
+    /* Theme selector */
+    .theme-dot {
+      width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+      border: 2px solid transparent; transition: border-color 0.2s, transform 0.1s;
+    }
+    .theme-dot:hover { transform: scale(1.1); }
+    .theme-dot.active { border-color: var(--accent-color); }
+
+    /* Spinner */
+    .spinner {
+      width: 16px; height: 16px; border: 2px solid var(--border-color);
+      border-top-color: var(--accent-color); border-radius: 50%;
+      animation: spin 0.8s linear infinite; display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Fade in */
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Table */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      text-align: left; padding: 12px 16px; font-size: 12px; font-weight: 600;
+      color: var(--text-secondary); border-bottom: 1px solid var(--border-color);
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .data-table td {
+      padding: 14px 16px; font-size: 14px; color: var(--text-primary);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .data-table tr:hover td { background: var(--bg-hover); }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+    }
+    .status-pending { background: rgba(156,163,175,0.15); color: var(--text-secondary); }
+    .status-running { background: rgba(59,130,246,0.15); color: var(--accent-color); }
+    .status-completed { background: rgba(16,185,129,0.15); color: var(--success-color); }
+    .status-failed { background: rgba(239,68,68,0.15); color: var(--danger-color); }
+
+    /* V9.0 Asset Drawer (slide-in from right) */
+    .drawer-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.5); backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+    .drawer-panel {
+      position: fixed; top: 0; right: 0; z-index: 201;
+      width: 560px; max-width: 90vw; height: 100vh;
+      background: var(--bg-secondary); border-left: 1px solid var(--border-color);
+      transform: translateX(100%); transition: transform 0.3s ease;
+      overflow-y: auto; display: flex; flex-direction: column;
+    }
+    .drawer-panel.open { transform: translateX(0); }
+
+    /* V9.0 Candidate card selection */
+    .candidate-card {
+      border: 3px solid var(--border-color); border-radius: 12px;
+      cursor: pointer; transition: border-color 0.2s, transform 0.1s;
+      overflow: hidden; position: relative;
+    }
+    .candidate-card:hover { transform: scale(1.02); }
+    .candidate-card.selected { border-color: var(--accent-color); box-shadow: 0 0 12px rgba(59,130,246,0.4); }
+    .candidate-card .check-badge {
+      position: absolute; top: 6px; right: 6px;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: var(--accent-color); color: #fff;
+      display: none; align-items: center; justify-content: center; font-size: 14px;
+    }
+    .candidate-card.selected .check-badge { display: flex; }
+
+    /* V9.0 Queue task card */
+    .queue-card { animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+
+    /* V13.0 History folder grid */
+    .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+    .folder-card {
+      cursor: pointer; border-radius: 14px; padding: 20px; text-align: center;
+      background: var(--bg-secondary); border: 1px solid var(--border-color);
+      transition: all 0.25s ease; position: relative; overflow: hidden;
+    }
+    .folder-card:hover { border-color: var(--accent-color); transform: translateY(-2px); box-shadow: var(--shadow); }
+    .folder-card .folder-icon { font-size: 40px; margin-bottom: 8px; line-height: 1; }
+    .folder-card .folder-name { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px; }
+    .folder-card .folder-count { font-size: 11px; color: var(--text-muted); }
+    .folder-card .folder-expand {
+      margin-top: 12px; max-height: 0; overflow: hidden;
+      transition: max-height 0.4s ease, margin-top 0.3s ease;
+    }
+    .folder-card.open .folder-expand { max-height: 2000px; margin-top: 14px; }
+    .folder-card .folder-chevron {
+      font-size: 10px; color: var(--text-muted); margin-top: 6px;
+      transition: transform 0.3s ease;
+    }
+    .folder-card.open .folder-chevron { transform: rotate(180deg); }
+    .folder-video-card {
+      display: flex; gap: 10px; align-items: center; padding: 10px;
+      border-radius: 10px; background: var(--bg-tertiary); margin-bottom: 8px;
+      cursor: pointer; transition: all 0.2s ease;
+    }
+    .folder-video-card:hover { background: var(--bg-hover); }
+
+    /* V13.0 Phone Mockup */
+    .phone-mockup {
+      width: 180px; margin: 0 auto; padding: 8px;
+      background: #1a1a1a; border-radius: 24px; position: relative;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 0 0 2px #333;
+    }
+    .phone-mockup::before {
+      content: ''; position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      width: 40px; height: 4px; background: #333; border-radius: 2px; z-index: 2;
+    }
+    .phone-screen {
+      background: linear-gradient(135deg, #0f0f1a, #1a1a2e);
+      border-radius: 16px; overflow: hidden; display: flex;
+      align-items: center; justify-content: center; flex-direction: column; gap: 8px;
+      transition: width 0.3s ease, height 0.3s ease;
+    }
+    .phone-screen .mockup-icon { font-size: 32px; }
+    .phone-screen .mockup-label { font-size: 11px; color: rgba(255,255,255,0.7); }
+
+    /* Toast notification */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--bg-tertiary); border: 1px solid var(--accent-color);
+      color: var(--text-primary); padding: 12px 24px; border-radius: 12px;
+      font-size: 14px; z-index: 300; box-shadow: var(--shadow);
+      animation: toastIn 0.3s ease;
+    }
+    @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <!-- ===================================================================
+       SIDEBAR
+       =================================================================== -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">🎬</div>
+      <div>
+        <p style="font-size:14px;font-weight:700;color:var(--text-primary);margin:0;">Video Studio</p>
+        <p style="font-size:10px;color:var(--text-muted);margin:0;">V9.0 Flagship</p>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-view="studio">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+        <span data-i18n="nav_studio">创作工作台</span>
+      </button>
+      <button class="nav-item" data-view="clone">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+        <span data-i18n="nav_clone">🎬 拍同款</span>
+      </button>
+      <button class="nav-item" data-view="agent">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        <span data-i18n="nav_agent">🤖 AI 导演</span>
+      </button>
+      <button class="nav-item" data-view="queue">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        <span data-i18n="nav_queue">生成进度</span>
+      </button>
+      <button class="nav-item" data-view="history">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span data-i18n="nav_history">历史档案馆</span>
+      </button>
+      <div style="border-top:1px solid var(--border-color);margin:8px 0;"></div>
+      <button class="nav-item" data-view="products">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        <span data-i18n="nav_products">产品库</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <!-- Theme Switcher -->
+      <div style="margin-bottom:12px;">
+        <p style="font-size:10px;color:var(--text-muted);margin:0 0 8px 4px;text-transform:uppercase;letter-spacing:0.5px;" data-i18n="theme">主题</p>
+        <div style="display:flex;gap:8px;padding:0 4px;">
+          <div class="theme-dot active" data-theme="dark-pro" style="background:#0a0a0a;border-color:#3b82f6;" title="Dark Pro"></div>
+          <div class="theme-dot" data-theme="apple-light" style="background:#ffffff;" title="Apple Light"></div>
+          <div class="theme-dot" data-theme="cyberpunk" style="background:linear-gradient(135deg,#ff00ff,#00ffff);" title="Cyberpunk"></div>
+          <div class="theme-dot" data-theme="nature" style="background:#4a7c2e;" title="Nature"></div>
+        </div>
+      </div>
+      <!-- Language Switcher -->
+      <div style="display:flex;gap:4px;background:var(--bg-tertiary);border-radius:8px;padding:3px;">
+        <button id="langZh" class="btn-secondary" style="flex:1;padding:6px;font-size:12px;border:none;">中</button>
+        <button id="langEn" class="btn-secondary" style="flex:1;padding:6px;font-size:12px;border:none;">EN</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===================================================================
+       MAIN CONTENT
+       =================================================================== -->
+  <main class="main-content">
+
+    <!-- ================================================================
+         VIEW 0: CLONE (拍同款)
+         ================================================================ -->
+    <div id="view-clone" class="view" style="padding:24px;max-width:1200px;margin:0 auto;">
+      <div style="margin-bottom:24px;">
+        <h2 style="font-size:24px;font-weight:800;color:var(--text-primary);margin:0 0 8px;" data-i18n="clone_title">🎬 拍同款</h2>
+        <p style="font-size:14px;color:var(--text-muted);margin:0;" data-i18n="clone_subtitle">上传一个参考视频和你的产品图，AI 自动分析运镜节奏，用你的产品复刻同款视频</p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+        <!-- 左：参考视频上传 -->
+        <div class="card" style="padding:20px;">
+          <h3 style="font-size:15px;font-weight:700;color:var(--text-primary);margin:0 0 12px;" data-i18n="clone_ref_video">📹 参考视频</h3>
+          <div id="cloneVideoDropZone" style="border:2px dashed var(--border-color);border-radius:12px;padding:32px 16px;text-align:center;cursor:pointer;transition:all 0.2s;">
+            <div id="cloneVideoPlaceholder">
+              <div style="font-size:40px;margin-bottom:8px;">📹</div>
+              <p style="font-size:13px;color:var(--text-muted);margin:0 0 4px;" data-i18n="clone_video_hint">点击或拖拽上传 MP4 视频</p>
+              <p style="font-size:11px;color:var(--text-muted);margin:0;" data-i18n="clone_video_limit">建议 1 分钟内，50MB 以下</p>
+            </div>
+            <video id="cloneVideoPreview" style="display:none;width:100%;max-height:200px;border-radius:8px;" controls muted></video>
+            <input type="file" id="cloneVideoInput" accept="video/mp4,video/*" style="display:none;">
+          </div>
+        </div>
+
+        <!-- 右：产品图上传 -->
+        <div class="card" style="padding:20px;">
+          <h3 style="font-size:15px;font-weight:700;color:var(--text-primary);margin:0 0 12px;" data-i18n="clone_product_images">🖼️ 我的产品图</h3>
+          <div id="cloneImageDropZone" style="border:2px dashed var(--border-color);border-radius:12px;padding:32px 16px;text-align:center;cursor:pointer;transition:all 0.2s;">
+            <div style="font-size:40px;margin-bottom:8px;">🖼️</div>
+            <p style="font-size:13px;color:var(--text-muted);margin:0 0 4px;" data-i18n="clone_image_hint">点击或拖拽上传产品图</p>
+            <p style="font-size:11px;color:var(--text-muted);margin:0;" data-i18n="clone_image_limit">支持多张，自动抠图去白边</p>
+          </div>
+          <div id="cloneImagePreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;"></div>
+          <input type="file" id="cloneImageInput" accept="image/*" multiple style="display:none;">
+        </div>
+      </div>
+
+      <!-- 参数配置 -->
+      <div class="card" style="padding:20px;margin-bottom:20px;">
+        <h3 style="font-size:15px;font-weight:700;color:var(--text-primary);margin:0 0 16px;" data-i18n="clone_config">⚙️ 参数配置</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="product_name">产品名称</label>
+            <input id="cloneProductName" type="text" class="input-base" placeholder="如：便携保温杯" style="width:100%;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="selling_points">核心卖点</label>
+            <input id="cloneSellingPoints" type="text" class="input-base" placeholder="如：24h保温,316不锈钢" style="width:100%;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="language">语言</label>
+            <select id="cloneLanguage" class="input-base" style="width:100%;">
+              <option value="en">English</option>
+              <option value="th">ไทย</option>
+              <option value="id">Indonesia</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="vibe">氛围</label>
+            <select id="cloneVibe" class="input-base" style="width:100%;">
+              <option value="upbeat">🔥 Upbeat</option>
+              <option value="premium">💎 Premium</option>
+              <option value="chill">🌿 Chill</option>
+              <option value="cinematic">🎬 Cinematic</option>
+              <option value="viral">🤪 Viral</option>
+              <option value="asmr">🤫 ASMR</option>
+              <option value="urgent">⚡ Urgent</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="product_material">产品材质</label>
+            <select id="cloneMaterial" class="input-base" style="width:100%;">
+              <option value="other">🪵 其他</option>
+              <option value="glass">🧊 玻璃/透明</option>
+              <option value="metal">🛡️ 金属/反光</option>
+              <option value="plastic">🧴 塑料/哑光</option>
+              <option value="fabric">👕 布料/服饰</option>
+              <option value="electronics">📱 3C数码</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="aspect_ratio">视频比例</label>
+            <select id="cloneAspectRatio" class="input-base" style="width:100%;">
+              <option value="9:16">9:16 竖屏</option>
+              <option value="16:9">16:9 横屏</option>
+              <option value="1:1">1:1 方形</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="cloneVoiceover" checked style="accent-color:var(--accent-color);">
+          <label for="cloneVoiceover" style="font-size:13px;color:var(--text-secondary);cursor:pointer;" data-i18n="enable_voiceover">生成 AI 配音</label>
+        </div>
+      </div>
+
+      <!-- 提交按钮 -->
+      <button id="cloneSubmitBtn" class="btn-primary" style="width:100%;padding:16px;font-size:16px;font-weight:700;" onclick="CloneModule.submit()">
+        <span data-i18n="clone_submit">🚀 开始复刻</span>
+      </button>
+    </div>
+
+    <!-- ================================================================
+         VIEW 1: STUDIO (创作工作台)
+         ================================================================ -->
+    <div id="view-studio" class="view active" style="padding:24px;">
+      <div style="display:flex;gap:24px;max-width:1400px;align-items:flex-start;">
+        <!-- ========== 左侧 40% 配置区 ========== -->
+        <div style="flex:0 0 42%;max-width:600px;">
+          <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin:0 0 20px;" data-i18n="config_title">创作工作台</h2>
+
+          <!-- From Product Library -->
+          <div style="margin-bottom:16px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="from_product">从产品库选择(可选)</label>
+            <select id="productSelect" class="input-base" style="appearance:auto;">
+              <option value="" data-i18n="no_product">不使用产品库</option>
+            </select>
+          </div>
+
+          <!-- Product Name -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="product_name">产品名称</label>
+            <input id="productName" type="text" class="input-base" placeholder="请输入产品名称" />
+          </div>
+
+          <!-- Selling Points -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="selling_points">核心卖点</label>
+            <input id="sellingPoints" type="text" class="input-base" placeholder="请输入核心卖点，逗号分隔" />
+          </div>
+
+          <!-- Target Audience -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="target_audience">目标受众</label>
+            <input id="targetAudience" type="text" class="input-base" placeholder="请输入目标受众" />
+          </div>
+
+          <!-- Duration + Aspect Ratio (同一行) -->
+          <div style="display:flex;gap:12px;margin-bottom:14px;">
+            <div style="flex:0 0 120px;">
+              <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="duration">时长(秒)</label>
+              <input id="duration" type="number" value="15" min="5" max="120" class="input-base" style="width:100%;" />
+            </div>
+            <div style="flex:1;">
+              <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="aspect_ratio">视频比例</label>
+              <div id="arPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+            </div>
+          </div>
+
+          <!-- Image Upload -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="image_upload">产品图片</label>
+            <div id="dropZone" style="border:2px dashed var(--border-color);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:border-color 0.2s;">
+              <p style="font-size:13px;color:var(--text-muted);margin:0;" data-i18n="drop_hint">拖拽图片到此处或点击上传</p>
+              <input id="imageFile" type="file" accept="image/*" multiple style="display:none;" />
+            </div>
+            <div id="fileList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;"></div>
+            <div style="margin-top:8px;">
+              <input id="imageUrl" type="text" class="input-base" placeholder="或输入图片 URL" style="font-size:12px;" />
+            </div>
+          </div>
+
+          <!-- Language Multi-Select -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="languages">目标语言</label>
+            <div id="langPills" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+          </div>
+
+          <!-- Vibe Multi-Select -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="vibes">视频氛围</label>
+            <div id="vibePills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+          </div>
+
+          <!-- Visual Style -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="visual_style">视觉风格</label>
+            <div id="vsPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+          </div>
+
+          <!-- Defringe -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="defringe">边缘优化</label>
+            <div id="defringePills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+          </div>
+
+          <!-- V14.0 Product Material -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="product_material">产品材质</label>
+            <div id="materialPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+          </div>
+
+          <!-- Director Mode + Voiceover -->
+          <div style="display:flex;gap:12px;margin-bottom:14px;">
+            <div style="flex:1;display:flex;align-items:center;justify-content:space-between;background:var(--bg-tertiary);border-radius:10px;padding:10px 14px;border:1px solid var(--border-color);">
+              <span style="font-size:12px;font-weight:500;color:var(--text-primary);" data-i18n="director_mode">导演模式</span>
+              <input type="checkbox" id="directorToggle" class="ios-toggle" />
+            </div>
+            <div style="flex:1;display:flex;align-items:center;justify-content:space-between;background:var(--bg-tertiary);border-radius:10px;padding:10px 14px;border:1px solid var(--border-color);">
+              <span style="font-size:12px;font-weight:500;color:var(--text-primary);" data-i18n="voiceover">AI 配音</span>
+              <input type="checkbox" id="voiceoverToggle" class="ios-toggle" checked />
+            </div>
+          </div>
+
+          <!-- V9.0 Director Mode Pro: Candidates per scene -->
+          <div id="candidatesConfig" style="margin-bottom:14px;display:none;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="candidates_per_scene">每分镜候选数</label>
+            <div id="candidatesPills" style="display:flex;gap:6px;"></div>
+          </div>
+
+          <!-- Scripts per combo (batch mode only) -->
+          <div id="batchConfig" style="margin-bottom:16px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="scripts_per_combo">每组脚本数</label>
+            <input id="scriptsPerCombo" type="number" value="1" min="1" max="3" class="input-base" style="width:80px;" />
+          </div>
+
+          <!-- Submit -->
+          <button id="submitBtn" class="btn-primary" style="width:100%;">
+            <span id="submitBtnText" data-i18n="generate">开始生成</span>
+          </button>
+
+          <!-- CSV + ZIP -->
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button id="csvImportBtn" class="btn-secondary" style="flex:1;font-size:12px;" data-i18n="csv_import">CSV导入</button>
+            <button id="zipDownloadBtn" class="btn-secondary" style="flex:1;font-size:12px;" data-i18n="zip_download">ZIP下载</button>
+          </div>
+          <input id="csvFileInput" type="file" accept=".csv" style="display:none;" />
+
+          <!-- Hidden elements for backward compat (taskList/emptyState used by polling) -->
+          <div id="taskList" style="display:none;"></div>
+          <div id="emptyState" style="display:none;"></div>
+        </div>
+
+        <!-- ========== 右侧 58% 动态洞察与快捷操作区 ========== -->
+        <div style="flex:1;display:flex;flex-direction:column;gap:16px;min-width:0;">
+
+          <!-- 1. 实时规格预览卡片 (V13.0: 含手机 Mockup) -->
+          <div class="card" style="padding:20px;">
+            <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);margin:0 0 14px;" data-i18n="spec_preview">实时规格预览</h3>
+            <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+              <!-- V13.0: 手机 Mockup 实时预览 -->
+              <div class="phone-mockup" id="phoneMockup">
+                <div class="phone-screen" id="phoneScreen">
+                  <span class="mockup-icon" id="mockupVsIcon">📷</span>
+                  <span class="mockup-label" id="mockupVibeLabel">🔥 Upbeat</span>
+                </div>
+              </div>
+              <!-- 规格指标 -->
+              <div style="flex:1;min-width:180px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:20px;" id="specArIcon">📱</span>
+                  <div>
+                    <p style="font-size:10px;color:var(--text-muted);margin:0;" data-i18n="spec_resolution">分辨率</p>
+                    <p style="font-size:13px;font-weight:600;color:var(--text-primary);margin:0;" id="specResolution">1080×1920</p>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:20px;" id="specLangIcon">🇬🇧</span>
+                  <div>
+                    <p style="font-size:10px;color:var(--text-muted);margin:0;" data-i18n="spec_language">语言</p>
+                    <p style="font-size:13px;font-weight:600;color:var(--text-primary);margin:0;" id="specLanguage">English</p>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:20px;" id="specVibeIcon">🔥</span>
+                  <div>
+                    <p style="font-size:10px;color:var(--text-muted);margin:0;" data-i18n="spec_vibe">氛围</p>
+                    <p style="font-size:13px;font-weight:600;color:var(--text-primary);margin:0;" id="specVibe">Upbeat</p>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:20px;">🐎</span>
+                  <div>
+                    <p style="font-size:10px;color:var(--text-muted);margin:0;" data-i18n="video_engine_label">视频引擎</p>
+                    <p style="font-size:12px;font-weight:600;color:var(--accent-color);margin:0;" data-i18n="video_engine_name">🐎 HappyHorse 1.1</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. 历史快捷复用 Clone -->
+          <div class="card" style="padding:20px;">
+            <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);margin:0 0 14px;" data-i18n="clone_list_title">历史快捷复用</h3>
+            <div id="cloneList" style="display:flex;flex-direction:column;gap:10px;">
+              <p style="font-size:12px;color:var(--text-muted);margin:0;" data-i18n="clone_empty">暂无历史记录</p>
+            </div>
+          </div>
+
+          <!-- 3. AI 导演引导卡片 -->
+          <div class="card" style="padding:20px;cursor:pointer;background:var(--accent-gradient);border:none;" id="agentGuideCard">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <span style="font-size:32px;">🤖</span>
+              <div style="flex:1;">
+                <h3 style="font-size:14px;font-weight:700;color:#fff;margin:0 0 4px;" data-i18n="agent_guide_title">AI 导演引导</h3>
+                <p style="font-size:12px;color:rgba(255,255,255,0.85);margin:0;" data-i18n="agent_guide_desc">不知道怎么写卖点？让 AI 导演帮你构思</p>
+              </div>
+              <span style="font-size:12px;font-weight:600;color:#fff;background:rgba(255,255,255,0.2);padding:6px 12px;border-radius:8px;" data-i18n="agent_guide_btn">🚀 打开 AI 导演</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         VIEW 2: QUEUE (生成进度)
+         ================================================================ -->
+    <div id="view-queue" class="view" style="padding:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div>
+          <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin:0;" data-i18n="queue_title">生成进度</h2>
+          <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0;" data-i18n="queue_hint">实时显示进行中的任务，2秒自动刷新</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div id="queuePulse" class="spinner" style="display:none;"></div>
+          <button id="queueRefresh" class="btn-secondary" style="font-size:12px;" data-i18n="refresh">刷新</button>
+        </div>
+      </div>
+      <div id="queueList" style="display:flex;flex-direction:column;gap:12px;"></div>
+      <div id="queueEmpty" style="text-align:center;padding:80px 20px;color:var(--text-muted);">
+        <p style="font-size:56px;margin:0 0 12px;">🎬</p>
+        <p style="font-size:15px;font-weight:500;color:var(--text-secondary);margin:0 0 6px;" data-i18n="queue_empty">暂无进行中的任务</p>
+        <p style="font-size:13px;margin:0;" data-i18n="queue_empty_new">还没有运行中的任务，去工作台创建你的第一个爆款吧！</p>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         VIEW 3: HISTORY (历史档案馆)
+         ================================================================ -->
+    <div id="view-history" class="view" style="padding:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin:0;" data-i18n="history_title">历史档案馆</h2>
+        <button id="historyRefresh" class="btn-secondary" style="font-size:12px;" data-i18n="refresh">刷新</button>
+      </div>
+      <!-- V14.0: 面包屑导航(文件夹内部视图时显示) -->
+      <div id="historyBreadcrumb" style="display:none;align-items:center;gap:8px;margin-bottom:16px;padding:10px 14px;background:var(--bg-secondary);border-radius:10px;border:1px solid var(--border-color);">
+        <button class="btn-secondary" style="font-size:12px;padding:6px 12px;" id="breadcrumbBack">⬅️ <span data-i18n="back_to_folders">返回文件夹</span></button>
+        <span style="font-size:13px;color:var(--text-secondary);" id="breadcrumbCurrent"></span>
+      </div>
+      <div id="historyList" style="display:flex;flex-direction:column;gap:12px;"></div>
+      <div id="historyEmpty" style="text-align:center;padding:80px 20px;color:var(--text-muted);">
+        <p style="font-size:56px;margin:0 0 12px;">📚</p>
+        <p style="font-size:15px;font-weight:500;color:var(--text-secondary);margin:0 0 6px;" data-i18n="history_empty">暂无历史记录</p>
+        <p style="font-size:13px;margin:0;" data-i18n="history_empty_new">暂无历史记录，去工作台创建你的第一个爆款吧！</p>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         VIEW 3: PRODUCTS
+         ================================================================ -->
+    <div id="view-products" class="view" style="padding:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin:0;" data-i18n="products_title">产品库</h2>
+        <div style="display:flex;gap:8px;">
+          <button id="productTemplateBtn" class="btn-secondary" style="font-size:12px;" data-i18n="download_template">下载模板</button>
+          <button id="productCsvBtn" class="btn-secondary" style="font-size:12px;" data-i18n="csv_import">CSV导入</button>
+          <button id="productAddBtn" class="btn-primary" style="font-size:12px;padding:8px 16px;" data-i18n="add_product">新增产品</button>
+          <input id="productCsvInput" type="file" accept=".csv" style="display:none;" />
+        </div>
+      </div>
+      <!-- Search -->
+      <div style="margin-bottom:16px;">
+        <input id="productSearch" type="text" class="input-base" placeholder="搜索产品名称..." style="max-width:400px;" />
+      </div>
+      <!-- Table -->
+      <div class="card" style="overflow:hidden;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th data-i18n="product_name">产品名称</th>
+              <th data-i18n="selling_points">核心卖点</th>
+              <th data-i18n="ref_image">参考图</th>
+              <th data-i18n="actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="productsTableBody"></tbody>
+        </table>
+      </div>
+      <div id="productsEmpty" style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+        <p style="font-size:40px;margin:0 0 8px;">📦</p>
+        <p style="font-size:14px;" data-i18n="products_empty">暂无产品，点击新增或导入CSV</p>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         VIEW 5: AI 导演 (Agent Chat)
+         ================================================================ -->
+    <div id="view-agent" class="view" style="padding:0;flex-direction:column;height:calc(100vh - 0px);">
+      <div style="padding:16px 24px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:12px;">
+        <div style="width:36px;height:36px;border-radius:10px;background:var(--accent-gradient);display:flex;align-items:center;justify-content:center;font-size:18px;">🤖</div>
+        <div>
+          <h2 style="font-size:16px;font-weight:700;color:var(--text-primary);margin:0;" data-i18n="agent_title">AI 导演</h2>
+          <p style="font-size:11px;color:var(--text-muted);margin:2px 0 0;" data-i18n="agent_subtitle">Qwen-Max · 自然语言生成带货视频</p>
+        </div>
+        <button id="agentClearBtn" class="btn-secondary" style="margin-left:auto;font-size:11px;" data-i18n="agent_clear">清空对话</button>
+      </div>
+
+      <!-- Message stream -->
+      <div id="agentMessages" style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px;">
+        <!-- Empty state with quick commands -->
+        <div id="agentEmpty" style="margin:auto;text-align:center;max-width:560px;">
+          <div style="font-size:48px;margin:0 0 12px;">🎬</div>
+          <p style="font-size:15px;font-weight:600;color:var(--text-primary);margin:0 0 6px;" data-i18n="agent_welcome">告诉我你想做什么</p>
+          <p style="font-size:12px;color:var(--text-muted);margin:0 0 20px;" data-i18n="agent_welcome_sub">描述产品、选择风格,AI 自动完成视频生成</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <button class="agent-quick" data-prompt="帮我搜索产品库里有什么杯子" data-i18n="agent_q1">🔍 搜索杯子产品</button>
+            <button class="agent-quick" data-prompt="用这张图帮我做一个英语带货视频 https://example.com/product.png 产品是保温杯 卖点 24小时保温,316不锈钢" data-i18n="agent_q2">🎥 生成带货视频</button>
+            <button class="agent-quick" data-prompt="产品库里有哪些产品可以做成视频?" data-i18n="agent_q3">📋 浏览产品库</button>
+            <button class="agent-quick" data-prompt="帮我生成一个泰语的轻奢风格化妆品视频" data-i18n="agent_q4">💎 泰语轻奢视频</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <div style="padding:12px 24px 16px;border-top:1px solid var(--border-color);background:var(--bg-secondary);">
+        <div style="display:flex;gap:10px;align-items:flex-end;max-width:760px;margin:0 auto;">
+          <textarea id="agentInput" rows="1" class="input-base" style="flex:1;resize:none;max-height:120px;font-size:13px;line-height:1.5;" placeholder="输入消息... (Enter 发送, Shift+Enter 换行)" data-i18n-ph="agent_input_ph"></textarea>
+          <button id="agentSendBtn" class="btn-primary" style="padding:10px 18px;font-size:13px;">
+            <span id="agentSendText" data-i18n="agent_send">发送</span>
+            <div id="agentSendSpinner" class="spinner" style="display:none;width:14px;height:14px;border-width:2px;"></div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ===================================================================
+     MODALS
+     =================================================================== -->
+
+<!-- Storyboard Editor Modal (V7.0 Director Mode) -->
+<div id="storyboardModal" class="modal-overlay hidden" style="align-items:flex-start;padding-top:3rem;overflow-y:auto;">
+  <div class="card" style="max-width:800px;width:90%;max-height:90vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border-color);">
+      <div>
+        <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin:0;" data-i18n="storyboard_title">分镜编辑器</h3>
+        <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0;" data-i18n="storyboard_hint">编辑每个分镜后生成视频</p>
+      </div>
+      <button id="storyboardClose" class="btn-secondary" style="padding:6px;">✕</button>
+    </div>
+    <div id="storyboardList" style="flex:1;overflow-y:auto;padding:16px 24px;display:flex;flex-direction:column;gap:12px;"></div>
+    <div style="padding:16px 24px;border-top:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;">
+      <span id="storyboardStatus" style="font-size:12px;color:var(--text-muted);"></span>
+      <button id="storyboardConfirm" class="btn-primary" style="font-size:13px;" data-i18n="storyboard_confirm">确认并生成视频</button>
+    </div>
+  </div>
+</div>
+
+<!-- Video Player Modal -->
+<div id="videoModal" class="modal-overlay hidden">
+  <div style="max-width:420px;width:90%;">
+    <video id="videoPlayer" controls style="width:100%;border-radius:16px;background:#000;"></video>
+    <div style="text-align:center;margin-top:12px;">
+      <button id="videoClose" class="btn-secondary">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div id="confirmModal" class="modal-overlay hidden">
+  <div class="card" style="max-width:400px;width:90%;padding:24px;text-align:center;">
+    <p id="confirmMsg" style="font-size:14px;color:var(--text-primary);margin:0 0 20px;"></p>
+    <div style="display:flex;gap:12px;justify-content:center;">
+      <button id="confirmCancel" class="btn-secondary" data-i18n="cancel">取消</button>
+      <button id="confirmOk" class="btn-primary" data-i18n="confirm_ok">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- Product Create Modal -->
+<div id="productModal" class="modal-overlay hidden">
+  <div class="card" style="max-width:500px;width:90%;padding:24px;">
+    <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin:0 0 20px;" data-i18n="add_product">新增产品</h3>
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="product_name">产品名称</label>
+      <input id="newProductName" type="text" class="input-base" placeholder="请输入产品名称" />
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="selling_points">核心卖点</label>
+      <input id="newProductPoints" type="text" class="input-base" placeholder="卖点1,卖点2,卖点3" />
+    </div>
+    <div style="margin-bottom:20px;">
+      <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="ref_image">参考图URL</label>
+      <input id="newProductImages" type="text" class="input-base" placeholder="https://example.com/img.png (逗号分隔)" />
+    </div>
+    <div style="display:flex;gap:12px;justify-content:flex-end;">
+      <button id="productCancel" class="btn-secondary" data-i18n="cancel">取消</button>
+      <button id="productSave" class="btn-primary" data-i18n="save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- V9.0 Asset Drawer (History detail slide-in) -->
+<div id="assetDrawerOverlay" class="drawer-overlay"></div>
+<div id="assetDrawer" class="drawer-panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--bg-secondary);z-index:10;">
+    <h3 style="font-size:15px;font-weight:600;color:var(--text-primary);margin:0;" data-i18n="asset_detail">资产详情</h3>
+    <button id="drawerClose" class="btn-secondary" style="padding:6px 10px;">✕</button>
+  </div>
+  <div id="drawerContent" style="flex:1;overflow-y:auto;padding:20px;"></div>
+</div>
+
+<!-- V9.0 Director Mode Pro: Candidate Selection Modal -->
+<div id="candidateModal" class="modal-overlay hidden" style="align-items:flex-start;padding-top:2rem;overflow-y:auto;">
+  <div class="card" style="max-width:900px;width:95%;max-height:92vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border-color);">
+      <div>
+        <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin:0;" data-i18n="candidate_title">候选素材选择</h3>
+        <p style="font-size:12px;color:var(--text-muted);margin:4px 0 0;" data-i18n="candidate_hint">为每个分镜选择最佳图片和视频，确认后合成最终视频</p>
+      </div>
+      <button id="candidateClose" class="btn-secondary" style="padding:6px;">✕</button>
+    </div>
+    <div id="candidateList" style="flex:1;overflow-y:auto;padding:16px 24px;display:flex;flex-direction:column;gap:20px;"></div>
+    <div style="padding:16px 24px;border-top:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;">
+      <span id="candidateStatus" style="font-size:12px;color:var(--text-muted);"></span>
+      <button id="candidateConfirm" class="btn-primary" style="font-size:13px;" disabled data-i18n="candidate_confirm">确认并合成</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ======================================================================
+// V10.1 P0: 运行中状态集合(用于判断是否显示"手动合成"按钮)
+// ======================================================================
+const RUNNING_STATUSES = ['pending', 'scripting', 'img_gen', 'vid_gen', 'audio_gen', 'compositing'];
+
+// ======================================================================
+// I18nModule
+// ======================================================================
+const I18nModule = {
+  lang: 'zh',
+  dict: {
+    zh: {
+      nav_studio: "创作工作台", nav_queue: "生成进度", nav_history: "历史档案馆", nav_products: "产品库",
+      config_title: "创作工作台", from_product: "从产品库选择(可选)", no_product: "不使用产品库",
+      product_name: "产品名称", selling_points: "核心卖点", target_audience: "目标受众",
+      duration: "视频时长(秒)", image_upload: "产品图片", drop_hint: "拖拽图片到此处或点击上传",
+      languages: "目标语言", vibes: "视频氛围", visual_style: "视觉风格", defringe: "边缘优化",
+      director_mode: "导演模式", voiceover: "AI 配音", scripts_per_combo: "每组脚本数",
+      candidates_per_scene: "每分镜候选数",
+      generate: "开始生成", csv_import: "CSV导入", zip_download: "ZIP下载",
+      queue_title: "生成进度", queue_hint: "实时显示进行中的任务，2秒自动刷新", queue_empty: "暂无进行中的任务",
+      history_title: "历史档案馆", refresh: "刷新", history_empty: "暂无历史记录",
+      products_title: "产品库", download_template: "下载模板", add_product: "新增产品",
+      ref_image: "参考图", actions: "操作", products_empty: "暂无产品，点击新增或导入CSV",
+      theme: "主题", cancel: "取消", confirm_ok: "确认", save: "保存",
+      storyboard_title: "分镜编辑器", storyboard_hint: "编辑每个分镜后生成视频",
+      storyboard_confirm: "确认并生成视频", storyboard_scene: "分镜",
+      storyboard_narration: "旁白文案", storyboard_image_prompt: "场景画面提示词",
+      storyboard_video_prompt: "运镜与动态提示词", storyboard_visual_style: "视觉风格",
+      storyboard_vs_default: "跟随全局",
+      candidate_title: "候选素材选择", candidate_hint: "为每个分镜选择最佳图片和视频，确认后合成最终视频",
+      candidate_confirm: "确认并合成", candidate_select_image: "选择图片", candidate_select_video: "选择视频",
+      candidate_regenerate_image: "重新生成此图", candidate_regenerate_video: "重新生成此视频",
+      candidate_waiting: "等待选择", candidate_selected: "已选择",
+      asset_detail: "资产详情", asset_final_video: "最终视频", asset_scenes: "分镜素材",
+      asset_narration: "旁白文案", asset_scene_image: "场景图", asset_scene_video: "视频片段",
+      asset_no_video: "视频尚未生成",
+      confirm_batch: "将生成 {n} 个视频任务，确认开始？",
+      stage_pending: "排队中", stage_scripting: "生成文案", stage_img_gen: "生成图片",
+      stage_vid_gen: "生成视频", stage_audio_gen: "合成音频", stage_compositing: "后期合成",
+      stage_completed: "已完成", stage_failed: "失败",
+      status_queued: "排队中", status_running: "进行中", status_completed: "已完成", status_failed: "失败",
+      err_no_lang: "请至少选择一种语言", err_no_vibe: "请至少选择一种氛围",
+      err_no_image: "请上传图片或填写图片URL", director_generating: "正在生成文案分镜...",
+      toast_tasks_queued: "任务已加入队列，点击「生成进度」查看",
+      submitting: "提交中...",
+      download: "下载", delete: "删除", use_product: "去生成", edit: "编辑",
+      search_placeholder: "搜索产品名称...",
+      date_today: "今天", date_yesterday: "昨天",
+      folder_count: "{n} 个视频",
+      lang_labels: { en: "英语", th: "泰语", id: "印尼语" },
+      vibe_labels: { upbeat: "🔥动感", premium: "💎轻奢", chill: "🌿轻松", cinematic: "🎬电影", viral: "🤪网感", asmr: "🤫解压", urgent: "⚡急促" },
+      vs_labels: { photorealistic: "📷真实", "3d_render": "🧊3D", anime: "🌸二次元", cyberpunk: "🌃赛博" },
+      defringe_labels: { off: "关闭", light: "轻度", medium: "中度", heavy: "重度" },
+      product_material: "产品材质",
+      material_labels: { glass: "🧊 玻璃", metal: "🛡️ 金属", plastic: "🧴 塑料", fabric: "👕 布料", electronics: "📱 3C数码", other: "🪵 其他" },
+      video_engine_label: "视频引擎",
+      video_engine_name: "🐎 HappyHorse 1.1",
+      candidates_labels: { 1: "1个", 2: "2个", 3: "3个" },
+      status_labels: { pending: "等待中", scripting: "生成文案", img_gen: "生成图片", vid_gen: "生成视频", audio_gen: "合成音频", compositing: "后期合成", completed: "已完成", failed: "失败" },
+      nav_agent: "🤖 AI 导演", agent_title: "AI 导演", agent_subtitle: "Qwen-Max · 自然语言生成带货视频",
+      agent_clear: "清空对话", agent_welcome: "告诉我你想做什么", agent_welcome_sub: "描述产品、选择风格,AI 自动完成视频生成",
+      agent_q1: "🔍 搜索杯子产品", agent_q2: "🎥 生成带货视频", agent_q3: "📋 浏览产品库", agent_q4: "💎 泰语轻奢视频",
+      agent_send: "发送", agent_input_ph: "输入消息... (Enter 发送, Shift+Enter 换行)",
+      agent_task_card: "视频任务", agent_task_view: "查看进度", agent_task_polling: "生成中",
+      agent_product_card: "找到 {n} 个产品", agent_product_use: "用这个生成",
+      retry_composite: "🎬 手动合成最终视频", retry_composite_ing: "合成中...", retry_composite_success: "合成成功!", retry_composite_failed: "合成失败",
+      retry_no_clips: "没有可用视频片段,无法合成",
+      aspect_ratio: "视频比例", ar_labels: { "9:16": "📱 9:16 竖屏", "16:9": "🖥️ 16:9 横屏", "1:1": "⬜ 1:1 方形" },
+      spec_preview: "实时规格预览", spec_resolution: "分辨率", spec_language: "语言", spec_vibe: "氛围", spec_scenes: "预计分镜",
+      clone_list_title: "历史快捷复用", clone_btn: "♻️ 克隆配置", clone_empty: "暂无历史记录",
+      agent_guide_title: "AI 导演引导", agent_guide_desc: "不知道怎么写卖点？让 AI 导演帮你构思", agent_guide_btn: "🚀 打开 AI 导演",
+      queue_empty_new: "还没有运行中的任务，去工作台创建你的第一个爆款吧！",
+      history_empty_new: "暂无历史记录，去工作台创建你的第一个爆款吧！",
+      back_to_folders: "返回文件夹",
+      delete_task: "删除", delete_confirm: "确定删除此任务？相关文件将被清理", delete_success: "已删除", delete_failed: "删除失败",
+      nav_clone: "🎬 拍同款",
+      clone_title: "🎬 拍同款",
+      clone_subtitle: "上传一个参考视频和你的产品图，AI 自动分析运镜节奏，用你的产品复刻同款视频",
+      clone_ref_video: "📹 参考视频",
+      clone_video_hint: "点击或拖拽上传 MP4 视频",
+      clone_video_limit: "建议 1 分钟内，50MB 以下",
+      clone_product_images: "🖼️ 我的产品图",
+      clone_image_hint: "点击或拖拽上传产品图",
+      clone_image_limit: "支持多张，自动抠图去白边",
+      clone_config: "⚙️ 参数配置",
+      clone_submit: "🚀 开始复刻",
+      clone_video_only: "请上传视频文件",
+      clone_video_too_large: "视频超过50MB，请压缩后上传",
+      clone_no_video: "请上传参考视频",
+      clone_no_images: "请上传产品图",
+      clone_no_name: "请填写产品名称",
+      clone_success: "拍同款任务已创建！正在分析视频...",
+      clone_failed: "创建失败",
+    },
+    en: {
+      nav_studio: "Studio", nav_queue: "Queue", nav_history: "History", nav_products: "Products",
+      config_title: "Studio", from_product: "From Product Library (optional)", no_product: "No product",
+      product_name: "Product Name", selling_points: "Selling Points", target_audience: "Target Audience",
+      duration: "Duration (sec)", image_upload: "Product Images", drop_hint: "Drag images here or click to upload",
+      languages: "Languages", vibes: "Vibe", visual_style: "Visual Style", defringe: "Edge Optimization",
+      director_mode: "Director Mode", voiceover: "AI Voiceover", scripts_per_combo: "Scripts per combo",
+      candidates_per_scene: "Candidates per scene",
+      generate: "Generate", csv_import: "CSV Import", zip_download: "ZIP Download",
+      queue_title: "Queue", queue_hint: "Real-time running tasks, 2s auto-refresh", queue_empty: "No running tasks",
+      history_title: "History", refresh: "Refresh", history_empty: "No history yet",
+      products_title: "Products", download_template: "Template", add_product: "Add Product",
+      ref_image: "Reference", actions: "Actions", products_empty: "No products yet",
+      theme: "Theme", cancel: "Cancel", confirm_ok: "Confirm", save: "Save",
+      storyboard_title: "Storyboard Editor", storyboard_hint: "Edit scenes then generate",
+      storyboard_confirm: "Confirm & Generate", storyboard_scene: "Scene",
+      storyboard_narration: "Narration", storyboard_image_prompt: "Image Prompt",
+      storyboard_video_prompt: "Video Prompt", storyboard_visual_style: "Visual Style",
+      storyboard_vs_default: "Follow Global",
+      candidate_title: "Candidate Selection", candidate_hint: "Select best image and video for each scene, then confirm to synthesize",
+      candidate_confirm: "Confirm & Synthesize", candidate_select_image: "Select Image", candidate_select_video: "Select Video",
+      candidate_regenerate_image: "Regenerate Image", candidate_regenerate_video: "Regenerate Video",
+      candidate_waiting: "Pending selection", candidate_selected: "Selected",
+      asset_detail: "Asset Detail", asset_final_video: "Final Video", asset_scenes: "Scene Assets",
+      asset_narration: "Narration", asset_scene_image: "Scene Image", asset_scene_video: "Video Clip",
+      asset_no_video: "Video not generated yet",
+      confirm_batch: "Will generate {n} video tasks. Confirm?",
+      stage_pending: "Queued", stage_scripting: "Scripting", stage_img_gen: "Image Gen",
+      stage_vid_gen: "Video Gen", stage_audio_gen: "Audio Gen", stage_compositing: "Compositing",
+      stage_completed: "Done", stage_failed: "Failed",
+      status_queued: "Queued", status_running: "Running", status_completed: "Completed", status_failed: "Failed",
+      err_no_lang: "Select at least one language", err_no_vibe: "Select at least one vibe",
+      err_no_image: "Upload image or enter URL", director_generating: "Generating script...",
+      toast_tasks_queued: "Tasks queued. Click Queue to view.",
+      submitting: "Submitting...",
+      download: "Download", delete: "Delete", use_product: "Generate", edit: "Edit",
+      search_placeholder: "Search product name...",
+      date_today: "Today", date_yesterday: "Yesterday",
+      folder_count: "{n} videos",
+      lang_labels: { en: "English", th: "Thai", id: "Indonesian" },
+      vibe_labels: { upbeat: "🔥Upbeat", premium: "💎Premium", chill: "🌿Chill", cinematic: "🎬Cinematic", viral: "🤪Viral", asmr: "🤫ASMR", urgent: "⚡Urgent" },
+      vs_labels: { photorealistic: "📷Real", "3d_render": "🧊3D", anime: "🌸Anime", cyberpunk: "🌃Cyber" },
+      defringe_labels: { off: "Off", light: "Light", medium: "Medium", heavy: "Heavy" },
+      product_material: "Material",
+      material_labels: { glass: "🧊 Glass", metal: "🛡️ Metal", plastic: "🧴 Plastic", fabric: "👕 Fabric", electronics: "📱 Electronics", other: "🪵 Other" },
+      video_engine_label: "Video Engine",
+      video_engine_name: "🐎 HappyHorse 1.1",
+      candidates_labels: { 1: "1", 2: "2", 3: "3" },
+      status_labels: { pending: "Pending", scripting: "Scripting", img_gen: "Image Gen", vid_gen: "Video Gen", audio_gen: "Audio", compositing: "Compositing", completed: "Completed", failed: "Failed" },
+      nav_agent: "🤖 AI Director", agent_title: "AI Director", agent_subtitle: "Qwen-Max · Natural language video generation",
+      agent_clear: "Clear", agent_welcome: "Tell me what you want", agent_welcome_sub: "Describe the product, pick a style, AI does the rest",
+      agent_q1: "🔍 Search cups", agent_q2: "🎥 Make a promo video", agent_q3: "📋 Browse products", agent_q4: "💎 Thai premium video",
+      agent_send: "Send", agent_input_ph: "Type a message... (Enter to send, Shift+Enter for newline)",
+      agent_task_card: "Video Task", agent_task_view: "View Progress", agent_task_polling: "Generating",
+      agent_product_card: "Found {n} products", agent_product_use: "Use this",
+      retry_composite: "🎬 Retry Composite Final Video", retry_composite_ing: "Compositing...", retry_composite_success: "Composite success!", retry_composite_failed: "Composite failed",
+      retry_no_clips: "No video clips available, cannot composite",
+      aspect_ratio: "Aspect Ratio", ar_labels: { "9:16": "📱 9:16 Portrait", "16:9": "🖥️ 16:9 Landscape", "1:1": "⬜ 1:1 Square" },
+      spec_preview: "Live Spec Preview", spec_resolution: "Resolution", spec_language: "Language", spec_vibe: "Vibe", spec_scenes: "Est. Scenes",
+      clone_list_title: "Quick Clone", clone_btn: "♻️ Clone Config", clone_empty: "No history yet",
+      agent_guide_title: "AI Director Guide", agent_guide_desc: "Don't know how to write selling points? Let AI Director help", agent_guide_btn: "🚀 Open AI Director",
+      queue_empty_new: "No running tasks yet. Create your first hit in the Studio!",
+      history_empty_new: "No history yet. Create your first hit in the Studio!",
+      back_to_folders: "Back to Folders",
+      delete_task: "Delete", delete_confirm: "Delete this task? Related files will be cleaned up", delete_success: "Deleted", delete_failed: "Delete failed",
+      nav_clone: "🎬 Clone",
+      clone_title: "🎬 Clone Video",
+      clone_subtitle: "Upload a reference video and your product images. AI analyzes camera movements and recreates the video with your product.",
+      clone_ref_video: "📹 Reference Video",
+      clone_video_hint: "Click or drag to upload MP4",
+      clone_video_limit: "Under 1 min, 50MB max",
+      clone_product_images: "🖼️ Your Product Images",
+      clone_image_hint: "Click or drag to upload product images",
+      clone_image_limit: "Multiple images, auto background removal",
+      clone_config: "⚙️ Configuration",
+      clone_submit: "🚀 Start Cloning",
+      clone_video_only: "Please upload a video file",
+      clone_video_too_large: "Video exceeds 50MB, please compress",
+      clone_no_video: "Please upload a reference video",
+      clone_no_images: "Please upload product images",
+      clone_no_name: "Please enter product name",
+      clone_success: "Clone task created! Analyzing video...",
+      clone_failed: "Creation failed",
+    }
+  },
+  t(key) {
+    const d = this.dict[this.lang];
+    return d[key] || this.dict.zh[key] || key;
+  },
+  apply() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      const val = this.t(key);
+      if (typeof val === 'string') el.innerText = val;
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+      el.placeholder = this.t(el.getAttribute('data-i18n-ph'));
+    });
+  }
+};
+
+// ======================================================================
+// ThemeModule
+// ======================================================================
+const ThemeModule = {
+  current: 'dark-pro',
+  init() {
+    const saved = localStorage.getItem('v8_theme');
+    if (saved) this.switch(saved);
+    document.addEventListener('click', (e) => {
+      const dot = e.target.closest('.theme-dot');
+      if (dot && dot.dataset.theme) {
+        this.switch(dot.dataset.theme);
+      }
+    });
+  },
+  switch(theme) {
+    this.current = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('v8_theme', theme);
+    document.querySelectorAll('.theme-dot').forEach(dot => {
+      dot.classList.toggle('active', dot.dataset.theme === theme);
+    });
+  }
+};
+
+// ======================================================================
+// Navigation
+// ======================================================================
+function switchView(viewName) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const view = document.getElementById('view-' + viewName);
+  if (view) view.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.view === viewName);
+  });
+  if (viewName === 'queue') QueueModule.start();
+  else QueueModule.stop();
+  if (viewName === 'history') HistoryModule.load();
+  if (viewName === 'products') ProductsModule.load();
+  if (viewName === 'agent') AgentModule.onShow();
+  if (viewName === 'studio') { GenerateModule.updateSpecPreview(); GenerateModule.loadCloneList(); }
+  if (viewName === 'clone') CloneModule.init();
+}
+
+function showToast(msg, duration = 3000) {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerText = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), duration);
+}
+
+// ======================================================================
+// GenerateModule (preserves V7.0 logic)
+// ======================================================================
+const GenerateModule = {
+  selectedLangs: ['en'],
+  selectedVibes: ['upbeat'],
+  selectedStyle: '生活化',
+  selectedVisualStyle: 'photorealistic',
+  selectedDefringe: 'medium',
+  selectedAspectRatio: '9:16',
+  selectedProductMaterial: 'other',
+  candidatesPerScene: 1,
+  uploadedFiles: [],
+  batchTasks: [],
+  pollingTimer: null,
+  directorMode: false,
+  directorTaskId: null,
+
+  init() {
+    this.renderLangPills();
+    this.renderVibePills();
+    this.renderVsPills();
+    this.renderDefringePills();
+    this.renderMaterialPills();
+    this.renderAspectRatioPills();
+    this.renderCandidatesPills();
+    this.bindEvents();
+    this.updateSpecPreview();
+    this.loadCloneList();
+    // 监听表单变化实时更新预览
+    document.getElementById('duration').addEventListener('input', () => this.updateSpecPreview());
+  },
+
+  t(key) { return I18nModule.t(key); },
+
+  renderLangPills() {
+    const container = document.getElementById('langPills');
+    const langs = ['en', 'th', 'id'];
+    container.innerHTML = '';
+    langs.forEach(lang => {
+      const pill = document.createElement('div');
+      pill.className = 'pill' + (this.selectedLangs.includes(lang) ? ' active' : '');
+      pill.innerText = this.t('lang_labels')[lang] || lang;
+      pill.onclick = () => this.toggleArray(this.selectedLangs, lang, pill);
+      container.appendChild(pill);
+    });
+  },
+
+  renderVibePills() {
+    const container = document.getElementById('vibePills');
+    const vibes = ['upbeat', 'premium', 'chill', 'cinematic', 'viral', 'asmr', 'urgent'];
+    container.innerHTML = '';
+    vibes.forEach(vibe => {
+      const pill = document.createElement('div');
+      pill.className = 'pill' + (this.selectedVibes.includes(vibe) ? ' active' : '');
+      pill.innerText = this.t('vibe_labels')[vibe] || vibe;
+      pill.onclick = () => this.toggleArray(this.selectedVibes, vibe, pill);
+      container.appendChild(pill);
+    });
+  },
+
+  renderVsPills() {
+    const container = document.getElementById('vsPills');
+    const styles = ['photorealistic', '3d_render', 'anime', 'cyberpunk'];
+    container.innerHTML = '';
+    styles.forEach(vs => {
+      const pill = document.createElement('div');
+      pill.className = 'pill' + (this.selectedVisualStyle === vs ? ' active' : '');
+      pill.innerText = this.t('vs_labels')[vs] || vs;
+      pill.onclick = () => {
+        this.selectedVisualStyle = vs;
+        this.renderVsPills();
+      };
+      container.appendChild(pill);
+    });
+  },
+
+  renderDefringePills() {
+    const container = document.getElementById('defringePills');
+    const levels = ['off', 'light', 'medium', 'heavy'];
+    container.innerHTML = '';
+    levels.forEach(level => {
+      const pill = document.createElement('div');
+      pill.className = 'pill' + (this.selectedDefringe === level ? ' active' : '');
+      pill.innerText = this.t('defringe_labels')[level] || level;
+      pill.onclick = () => {
+        this.selectedDefringe = level;
+        this.renderDefringePills();
+      };
+      container.appendChild(pill);
+    });
+  },
+
+  renderMaterialPills() {
+    const container = document.getElementById('materialPills');
+    if (!container) return;
+    const materials = ['glass', 'metal', 'plastic', 'fabric', 'electronics', 'other'];
+    container.innerHTML = '';
+    materials.forEach(m => {
+      const pill = document.createElement('div');
+      pill.className = 'pill' + (this.selectedProductMaterial === m ? ' active' : '');
+      pill.innerText = this.t('material_labels')[m] || m;
+      pill.onclick = () => {
+        this.selectedProductMaterial = m;
+        this.renderMaterialPills();
+        this.updateSpecPreview();
+      };
+      container.appendChild(pill);
+    });
+  },
+
+  renderAspectRatioPills() {
+    const container = document.getElementById('arPills');
+    if (!container) return;
+    const ratios = ['9:16', '16:9', '1:1'];
+    container.innerHTML = '';
+    ratios.forEach(ar => {
+      const pill = document.createElement('div');
+      pill.className = 'pill' + (this.selectedAspectRatio === ar ? ' active' : '');
+      pill.innerText = this.t('ar_labels')[ar] || ar;
+      pill.onclick = () => {
+        this.selectedAspectRatio = ar;
+        this.renderAspectRatioPills();
+        this.updateSpecPreview();
+      };
+      container.appendChild(pill);
+    });
+  },
+
+  // V11.0 实时规格预览 (V13.0: 增加手机 Mockup 动态屏幕)
+  updateSpecPreview() {
+    const arMap = {
+      '9:16': { icon: '📱', res: '1080×1920 竖屏' },
+      '16:9': { icon: '🖥️', res: '1920×1080 横屏' },
+      '1:1': { icon: '⬜', res: '1080×1080 方形' },
+    };
+    const langMap = { en: { icon: '🇬🇧', label: 'English' }, th: { icon: '🇹🇭', label: 'ไทย' }, id: { icon: '🇮🇩', label: 'Indonesia' } };
+    const vibeMap = { upbeat: '🔥', premium: '💎', chill: '🌿', cinematic: '🎬', viral: '🤪', asmr: '🤫', urgent: '⚡' };
+    const vsMap = { photorealistic: '📷', '3d_render': '🧊', anime: '🌸', cyberpunk: '🌃' };
+    const matMap = { glass: '🧊', metal: '🛡️', plastic: '🧴', fabric: '👕', electronics: '📱', other: '🪵' };
+    const ar = arMap[this.selectedAspectRatio] || arMap['9:16'];
+    const lang = langMap[this.selectedLangs[0]] || langMap.en;
+    const vibeKey = this.selectedVibes[0] || 'upbeat';
+    const vibeLabel = this.t('vibe_labels')[vibeKey] || vibeKey;
+    const vibeIcon = vibeMap[vibeKey] || '🔥';
+    const vsIcon = vsMap[this.selectedVisualStyle] || '📷';
+    const dur = parseInt(document.getElementById('duration')?.value || 15);
+    const sceneCount = Math.max(2, Math.min(8, Math.ceil(dur / 5)));
+
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+    setEl('specArIcon', ar.icon);
+    setEl('specResolution', ar.res);
+    setEl('specLangIcon', lang.icon);
+    setEl('specLanguage', lang.label);
+    setEl('specVibeIcon', vibeIcon);
+    setEl('specVibe', vibeLabel);
+    setEl('specScenes', String(sceneCount));
+
+    // V13.0: 手机 Mockup 动态屏幕 — 根据比例改变宽高比
+    const screen = document.getElementById('phoneScreen');
+    const mockup = document.getElementById('phoneMockup');
+    const mockupVsIcon = document.getElementById('mockupVsIcon');
+    const mockupVibeLabel = document.getElementById('mockupVibeLabel');
+    if (screen && mockup) {
+      // 以 160px 为基准短边,长边按比例延伸(9:16 竖最长,16:9 横向,1:1 正方)
+      if (this.selectedAspectRatio === '9:16') {
+        screen.style.width = '160px';
+        screen.style.height = '284px';
+        mockup.style.width = '180px';
+      } else if (this.selectedAspectRatio === '16:9') {
+        screen.style.width = '284px';
+        screen.style.height = '160px';
+        mockup.style.width = '304px';
+      } else { // 1:1
+        screen.style.width = '200px';
+        screen.style.height = '200px';
+        mockup.style.width = '220px';
+      }
+    }
+    const matIcon = matMap[this.selectedProductMaterial] || '🪵';
+    const matLabel = this.t('material_labels')[this.selectedProductMaterial] || this.selectedProductMaterial;
+    if (mockupVsIcon) mockupVsIcon.innerText = vsIcon;
+    if (mockupVibeLabel) mockupVibeLabel.innerText = `${vibeIcon} ${vibeLabel} · ${matIcon}`;
+  },
+
+  // V11.0 历史快捷复用
+  async loadCloneList() {
+    const container = document.getElementById('cloneList');
+    if (!container) return;
+    try {
+      const resp = await fetch('/api/history?page=1&size=3');
+      const data = await resp.json();
+      const items = (data.items || []).filter(i => i.final_video_url);
+      if (items.length === 0) {
+        container.innerHTML = `<p style="font-size:12px;color:var(--text-muted);margin:0;">${this.t('clone_empty')}</p>`;
+        return;
+      }
+      container.innerHTML = '';
+      items.forEach(item => {
+        const langLabel = this.t('lang_labels')[item.language] || item.language || '';
+        const vibeLabel = this.t('vibe_labels')[item.vibe] || item.vibe || '';
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg-tertiary);border-radius:10px;border:1px solid var(--border-color);';
+        row.innerHTML = `
+          <video src="${item.final_video_url}" style="width:48px;height:48px;object-fit:cover;border-radius:8px;background:#000;" muted></video>
+          <div style="flex:1;min-width:0;">
+            <p style="font-size:12px;font-weight:600;color:var(--text-primary);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${langLabel} · ${vibeLabel}</p>
+            <p style="font-size:10px;color:var(--text-muted);margin:2px 0 0;font-family:monospace;">${item.aspect_ratio || '9:16'}</p>
+          </div>
+          <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="GenerateModule.cloneConfig('${item.task_id}')">${this.t('clone_btn')}</button>`;
+        container.appendChild(row);
+      });
+    } catch (e) { /* ignore */ }
+  },
+
+  // V11.0 克隆配置回填
+  async cloneConfig(taskId) {
+    try {
+      const resp = await fetch(`/api/history/${taskId}`);
+      const data = await resp.json();
+      const sd = data.scenes_data || {};
+      const inp = sd.input || {};
+      if (inp.language) {
+        this.selectedLangs = [inp.language];
+        this.renderLangPills();
+      }
+      if (inp.vibe) {
+        this.selectedVibes = [inp.vibe];
+        this.renderVibePills();
+      }
+      if (inp.visual_style) {
+        this.selectedVisualStyle = inp.visual_style;
+        this.renderVsPills();
+      }
+      if (inp.aspect_ratio) {
+        this.selectedAspectRatio = inp.aspect_ratio;
+        this.renderAspectRatioPills();
+      }
+      if (inp.defringe_strength) {
+        this.selectedDefringe = inp.defringe_strength;
+        this.renderDefringePills();
+      }
+      if (inp.product_material) {
+        this.selectedProductMaterial = inp.product_material;
+        this.renderMaterialPills();
+      }
+      if (inp.product_name) document.getElementById('productName').value = inp.product_name;
+      if (inp.selling_points) document.getElementById('sellingPoints').value = (inp.selling_points || []).join(', ');
+      if (inp.target_audience) document.getElementById('targetAudience').value = inp.target_audience || '';
+      if (inp.duration_target_sec) document.getElementById('duration').value = inp.duration_target_sec;
+      this.updateSpecPreview();
+      showToast(this.t('clone_btn') + ' ✅');
+    } catch (e) {
+      alert(e.message);
+    }
+  },
+
+  renderCandidatesPills() {
+    const container = document.getElementById('candidatesPills');
+    if (!container) return;
+    const counts = [1, 2, 3];
+    container.innerHTML = '';
+    counts.forEach(n => {
+      const pill = document.createElement('div');
+      pill.className = 'pill' + (this.candidatesPerScene === n ? ' active' : '');
+      pill.innerText = this.t('candidates_labels')[n] || n;
+      pill.onclick = () => {
+        this.candidatesPerScene = n;
+        this.renderCandidatesPills();
+      };
+      container.appendChild(pill);
+    });
+  },
+
+  toggleArray(arr, val, el) {
+    const idx = arr.indexOf(val);
+    if (idx >= 0) { arr.splice(idx, 1); el.classList.remove('active'); }
+    else { arr.push(val); el.classList.add('active'); }
+    this.updateSpecPreview();
+  },
+
+  bindEvents() {
+    // Director toggle
+    document.getElementById('directorToggle').addEventListener('change', (e) => {
+      this.directorMode = e.target.checked;
+      const btnText = document.getElementById('submitBtnText');
+      btnText.innerText = this.directorMode
+        ? this.t('director_mode') + ' · ' + this.t('generate')
+        : this.t('generate');
+      // V9.0: Show candidates config only in director mode
+      document.getElementById('candidatesConfig').style.display = this.directorMode ? 'block' : 'none';
+      // V9.0: Hide batch config in director mode (single task)
+      document.getElementById('batchConfig').style.display = this.directorMode ? 'none' : 'block';
+    });
+
+    // Image upload
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('imageFile');
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => this.handleFiles(e.target.files));
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = 'var(--accent-color)'; });
+    dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = 'var(--border-color)'; });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--border-color)';
+      this.handleFiles(e.dataTransfer.files);
+    });
+
+    // Submit
+    document.getElementById('submitBtn').addEventListener('click', () => this.onSubmit());
+
+    // CSV import
+    document.getElementById('csvImportBtn').addEventListener('click', () => {
+      document.getElementById('csvFileInput').click();
+    });
+    document.getElementById('csvFileInput').addEventListener('change', (e) => this.handleCsvImport(e));
+
+    // ZIP download
+    document.getElementById('zipDownloadBtn').addEventListener('click', () => this.handleZipDownload());
+
+    // Storyboard
+    document.getElementById('storyboardConfirm').addEventListener('click', () => this.submitStoryboard());
+    document.getElementById('storyboardClose').addEventListener('click', () => {
+      document.getElementById('storyboardModal').classList.add('hidden');
+    });
+
+    // Video modal close
+    document.getElementById('videoClose').addEventListener('click', () => {
+      document.getElementById('videoModal').classList.add('hidden');
+      document.getElementById('videoPlayer').src = '';
+    });
+
+    // Product select
+    document.getElementById('productSelect').addEventListener('change', (e) => this.onProductSelect(e.target.value));
+
+    // Nav
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => switchView(item.dataset.view));
+    });
+
+    // Language switch
+    document.getElementById('langZh').addEventListener('click', () => { I18nModule.lang = 'zh'; I18nModule.apply(); this.refreshPills(); });
+    document.getElementById('langEn').addEventListener('click', () => { I18nModule.lang = 'en'; I18nModule.apply(); this.refreshPills(); });
+
+    // Confirm modal
+    document.getElementById('confirmCancel').addEventListener('click', () => {
+      document.getElementById('confirmModal').classList.add('hidden');
+    });
+  },
+
+  refreshPills() {
+    this.renderLangPills();
+    this.renderVibePills();
+    this.renderVsPills();
+    this.renderDefringePills();
+  },
+
+  handleFiles(files) {
+    Array.from(files).forEach(f => this.uploadedFiles.push(f));
+    this.renderFileList();
+  },
+
+  renderFileList() {
+    const container = document.getElementById('fileList');
+    container.innerHTML = '';
+    this.uploadedFiles.forEach((f, i) => {
+      const tag = document.createElement('div');
+      tag.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:8px;padding:4px 10px;font-size:12px;color:var(--text-secondary);';
+      tag.innerHTML = `<span>${f.name}</span><span style="cursor:pointer;color:var(--danger-color);" data-idx="${i}">✕</span>`;
+      tag.querySelector('[data-idx]').onclick = () => {
+        this.uploadedFiles.splice(i, 1);
+        this.renderFileList();
+      };
+      container.appendChild(tag);
+    });
+  },
+
+  async loadProducts() {
+    try {
+      const resp = await fetch('/api/products');
+      const products = await resp.json();
+      const select = document.getElementById('productSelect');
+      select.innerHTML = `<option value="">${this.t('no_product')}</option>`;
+      products.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.innerText = p.name;
+        select.appendChild(opt);
+      });
+      this._products = products;
+    } catch (e) { console.error('Load products failed:', e); }
+  },
+
+  onProductSelect(productId) {
+    if (!productId || !this._products) return;
+    const product = this._products.find(p => p.id === productId);
+    if (!product) return;
+    document.getElementById('productName').value = product.name || '';
+    document.getElementById('sellingPoints').value = product.selling_points || '';
+    if (product.image_urls && product.image_urls.length > 0) {
+      document.getElementById('imageUrl').value = product.image_urls[0];
+    }
+  },
+
+  onSubmit() {
+    if (this.selectedLangs.length === 0) { alert(this.t('err_no_lang')); return; }
+    if (this.selectedVibes.length === 0) { alert(this.t('err_no_vibe')); return; }
+
+    if (this.directorMode) {
+      this.generateScript();
+      return;
+    }
+
+    const scriptsPerCombo = parseInt(document.getElementById('scriptsPerCombo').value) || 1;
+    const total = this.selectedLangs.length * this.selectedVibes.length * scriptsPerCombo;
+    const msg = this.t('confirm_batch').replace('{n}', total);
+    document.getElementById('confirmMsg').innerText = msg;
+    document.getElementById('confirmModal').classList.remove('hidden');
+    document.getElementById('confirmOk').onclick = () => {
+      document.getElementById('confirmModal').classList.add('hidden');
+      this.doGenerate();
+    };
+  },
+
+  async doGenerate() {
+    const formData = new FormData();
+    formData.append('product_name', document.getElementById('productName').value);
+    formData.append('selling_points', document.getElementById('sellingPoints').value);
+    formData.append('target_audience', document.getElementById('targetAudience').value);
+    formData.append('duration_target_sec', document.getElementById('duration').value);
+    formData.append('style', this.selectedStyle);
+    formData.append('visual_style', this.selectedVisualStyle);
+    formData.append('defringe_strength', this.selectedDefringe);
+    formData.append('aspect_ratio', this.selectedAspectRatio);
+    formData.append('product_material', this.selectedProductMaterial);
+    formData.append('enable_voiceover', document.getElementById('voiceoverToggle').checked ? 'true' : 'false');
+    this.selectedLangs.forEach(l => formData.append('languages', l));
+    this.selectedVibes.forEach(v => formData.append('vibes', v));
+    formData.append('scripts_per_combo', document.getElementById('scriptsPerCombo').value);
+
+    const imageUrl = document.getElementById('imageUrl').value.trim();
+    if (this.uploadedFiles.length === 0 && !imageUrl) { alert(this.t('err_no_image')); return; }
+    if (imageUrl) formData.append('image_url', imageUrl);
+    this.uploadedFiles.forEach(f => formData.append('image_file', f));
+
+    // V13.0: 按钮视觉反馈 — "提交中..." + 禁用
+    const btn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('submitBtnText');
+    const originalText = btnText ? btnText.innerText : '';
+    if (btnText) btnText.innerText = this.t('submitting') || '提交中...';
+    btn.disabled = true;
+    try {
+      const resp = await fetch('/api/projects/batch', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Batch failed');
+      const taskCount = (data.tasks || data.combos || []).length;
+      showToast((this.t('toast_tasks_queued') || '任务已加入队列') + ` (${taskCount})`);
+      // V13.0: 自动平滑切换到生成进度视图,解决"不知道视频去哪了"
+      switchView('queue');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+      if (btnText) btnText.innerText = originalText;
+    }
+  },
+
+  async generateScript() {
+    const formData = new FormData();
+    formData.append('product_name', document.getElementById('productName').value);
+    formData.append('selling_points', document.getElementById('sellingPoints').value);
+    formData.append('target_audience', document.getElementById('targetAudience').value);
+    formData.append('duration_target_sec', document.getElementById('duration').value);
+    formData.append('style', this.selectedStyle);
+    formData.append('visual_style', this.selectedVisualStyle);
+    formData.append('defringe_strength', this.selectedDefringe);
+    formData.append('aspect_ratio', this.selectedAspectRatio);
+    formData.append('product_material', this.selectedProductMaterial);
+    formData.append('enable_voiceover', document.getElementById('voiceoverToggle').checked ? 'true' : 'false');
+    formData.append('language', this.selectedLangs[0]);
+    formData.append('vibe', this.selectedVibes[0]);
+    formData.append('candidates_per_scene', String(this.candidatesPerScene));
+
+    const imageUrl = document.getElementById('imageUrl').value.trim();
+    if (this.uploadedFiles.length === 0 && !imageUrl) { alert(this.t('err_no_image')); return; }
+    if (imageUrl) formData.append('image_url', imageUrl);
+    this.uploadedFiles.forEach(f => formData.append('image_file', f));
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    try {
+      const resp = await fetch('/api/projects/generate-script', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Script generation failed');
+      this.directorTaskId = data.task_id;
+      this.showStoryboardEditor(data.scenes);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  },
+
+  showStoryboardEditor(scenes) {
+    const list = document.getElementById('storyboardList');
+    list.innerHTML = '';
+    const vsOptions = [
+      { value: '', label: this.t('storyboard_vs_default') },
+      { value: 'photorealistic', label: this.t('vs_labels').photorealistic },
+      { value: '3d_render', label: this.t('vs_labels')['3d_render'] },
+      { value: 'anime', label: this.t('vs_labels').anime },
+      { value: 'cyberpunk', label: this.t('vs_labels').cyberpunk },
+    ];
+    scenes.forEach((scene, idx) => {
+      const card = document.createElement('div');
+      card.className = 'card fade-in';
+      card.style.cssText = 'padding:16px;';
+      const vsOpts = vsOptions.map(o => `<option value="${o.value}" ${scene.visual_style === o.value ? 'selected' : ''}>${o.label}</option>`).join('');
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="width:28px;height:28px;border-radius:8px;background:var(--accent-gradient);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;">${idx + 1}</span>
+          <span style="font-size:13px;font-weight:500;color:var(--text-primary);">${this.t('storyboard_scene')} ${idx + 1}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">${this.t('storyboard_narration')}</label>
+            <textarea data-field="narration" data-scene="${scene.scene_id}" class="input-base" rows="2" style="resize:none;" placeholder="${this.t('storyboard_narration')}">${scene.narration || ''}</textarea>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">${this.t('storyboard_image_prompt')}</label>
+            <textarea data-field="image_prompt" data-scene="${scene.scene_id}" class="input-base" rows="2" style="resize:none;" placeholder="${this.t('storyboard_image_prompt')}">${scene.image_prompt || ''}</textarea>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">${this.t('storyboard_video_prompt')}</label>
+            <textarea data-field="video_prompt" data-scene="${scene.scene_id}" class="input-base" rows="2" style="resize:none;" placeholder="${this.t('storyboard_video_prompt')}">${scene.video_prompt || ''}</textarea>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label style="font-size:11px;color:var(--text-muted);white-space:nowrap;">${this.t('storyboard_visual_style')}</label>
+            <select data-field="visual_style" data-scene="${scene.scene_id}" class="input-base" style="flex:1;font-size:12px;">${vsOpts}</select>
+          </div>
+        </div>`;
+      list.appendChild(card);
+    });
+    document.getElementById('storyboardStatus').innerText = `${scenes.length} ${this.t('storyboard_scene')}`;
+    document.getElementById('storyboardModal').classList.remove('hidden');
+  },
+
+  async submitStoryboard() {
+    if (!this.directorTaskId) return;
+    const scenes = [];
+    document.querySelectorAll('#storyboardList [data-scene]').forEach(el => {
+      const sid = el.dataset.scene;
+      let existing = scenes.find(s => s.scene_id === sid);
+      if (!existing) { existing = { scene_id: sid, narration: '', image_prompt: '', video_prompt: '', visual_style: null }; scenes.push(existing); }
+      if (el.dataset.field === 'visual_style') existing.visual_style = el.value || null;
+      else existing[el.dataset.field] = el.value;
+    });
+
+    const btn = document.getElementById('storyboardConfirm');
+    const orig = btn.innerText;
+    btn.disabled = true;
+    btn.innerText = '...';
+
+    try {
+      const resp = await fetch(`/api/projects/${this.directorTaskId}/continue-generation`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenes, candidates_per_scene: this.candidatesPerScene }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Continue failed');
+
+      document.getElementById('storyboardModal').classList.add('hidden');
+      btn.disabled = false;
+      btn.innerText = orig;
+
+      // V9.0: If candidates > 1, poll for candidate selection; else go to Queue
+      if (this.candidatesPerScene > 1) {
+        this._pollForCandidates(this.directorTaskId);
+      } else {
+        showToast(this.t('toast_tasks_queued'));
+        switchView('queue');
+      }
+      this.directorTaskId = null;
+    } catch (e) {
+      alert(e.message);
+      btn.disabled = false;
+      btn.innerText = orig;
+    }
+  },
+
+  // V9.0 Director Mode Pro: Poll until candidates are ready, then show selection modal
+  _candidatePollTimer: null,
+  _pollForCandidates(taskId) {
+    showToast(this.t('director_generating'));
+    if (this._candidatePollTimer) clearInterval(this._candidatePollTimer);
+    this._candidatePollTimer = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/projects/${taskId}`);
+        const data = await resp.json();
+        if (data.status === 'awaiting_selection') {
+          clearInterval(this._candidatePollTimer);
+          this._candidatePollTimer = null;
+          this.showCandidateSelection(taskId, data.scenes);
+        } else if (data.status === 'failed') {
+          clearInterval(this._candidatePollTimer);
+          this._candidatePollTimer = null;
+          alert(data.error || 'Generation failed');
+          switchView('queue');
+        }
+      } catch (e) { /* ignore */ }
+    }, 3000);
+  },
+
+  // V9.0 Director Mode Pro: Show candidate selection modal
+  _candidateSelections: {},
+  async showCandidateSelection(taskId, scenes) {
+    this._candidateTaskId = taskId;
+    this._candidateSelections = {};
+
+    // Fetch full project data with candidate assets
+    const resp = await fetch(`/api/history/${taskId}`);
+    const data = await resp.json();
+    const project = data.scenes_data || {};
+    const projectScenes = project.scenes || [];
+
+    const list = document.getElementById('candidateList');
+    list.innerHTML = '';
+
+    projectScenes.forEach((scene, idx) => {
+      const candidateImages = scene.candidate_images || [];
+      const candidateVideos = scene.candidate_videos || [];
+      // Fallback: if no candidates array, use the single asset
+      const images = candidateImages.length > 0 ? candidateImages : (scene.assets?.keyframe_image?.url ? [scene.assets.keyframe_image] : []);
+      const videos = candidateVideos.length > 0 ? candidateVideos : (scene.assets?.video_clip?.url ? [scene.assets.video_clip] : []);
+
+      this._candidateSelections[scene.scene_id] = { image_idx: 0, video_idx: 0 };
+
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.cssText = 'padding:16px;';
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="width:28px;height:28px;border-radius:8px;background:var(--accent-gradient);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;">${idx + 1}</span>
+          <span style="font-size:13px;font-weight:500;color:var(--text-primary);">${this.t('storyboard_scene')} ${idx + 1}</span>
+          <span style="font-size:12px;color:var(--text-muted);margin-left:auto;" data-status="${scene.scene_id}">${this.t('candidate_selected')}</span>
+        </div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0 0 12px;">${(scene.narration || '').substring(0, 80)}</p>
+        <div style="margin-bottom:12px;">
+          <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px;">${this.t('candidate_select_image')}</p>
+          <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;" data-image-grid="${scene.scene_id}">
+            ${images.map((img, i) => `
+              <div class="candidate-card ${i === 0 ? 'selected' : ''}" data-scene="${scene.scene_id}" data-type="image" data-idx="${i}" style="flex-shrink:0;width:120px;height:80px;">
+                <div class="check-badge">✓</div>
+                ${img.url ? `<img src="${img.url}" style="width:100%;height:100%;object-fit:cover;" />` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg-hover);">📷</div>'}
+              </div>
+            `).join('')}
+          </div>
+          <button class="btn-secondary" style="font-size:11px;padding:4px 10px;margin-top:6px;" onclick="GenerateModule.regenerateAsset('${scene.scene_id}', 'image')">${this.t('candidate_regenerate_image')}</button>
+        </div>
+        <div>
+          <p style="font-size:11px;color:var(--text-muted);margin:0 0 6px;">${this.t('candidate_select_video')}</p>
+          <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;" data-video-grid="${scene.scene_id}">
+            ${videos.map((vid, i) => `
+              <div class="candidate-card ${i === 0 ? 'selected' : ''}" data-scene="${scene.scene_id}" data-type="video" data-idx="${i}" style="flex-shrink:0;width:120px;height:80px;">
+                <div class="check-badge">✓</div>
+                ${vid.url ? `<video src="${vid.url}" style="width:100%;height:100%;object-fit:cover;" muted></video>` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg-hover);">🎬</div>'}
+              </div>
+            `).join('')}
+          </div>
+          <button class="btn-secondary" style="font-size:11px;padding:4px 10px;margin-top:6px;" onclick="GenerateModule.regenerateAsset('${scene.scene_id}', 'video')">${this.t('candidate_regenerate_video')}</button>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+
+    // Bind candidate card clicks
+    list.querySelectorAll('.candidate-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const sid = card.dataset.scene;
+        const type = card.dataset.type;
+        const idx = parseInt(card.dataset.idx);
+        this._candidateSelections[sid] = this._candidateSelections[sid] || { image_idx: 0, video_idx: 0 };
+        this._candidateSelections[sid][type === 'image' ? 'image_idx' : 'video_idx'] = idx;
+        // Update visual selection
+        const grid = card.parentElement;
+        grid.querySelectorAll('.candidate-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+      });
+    });
+
+    document.getElementById('candidateModal').classList.remove('hidden');
+  },
+
+  async confirmCandidates() {
+    const taskId = this._candidateTaskId;
+    if (!taskId) return;
+    const btn = document.getElementById('candidateConfirm');
+    btn.disabled = true;
+    btn.innerText = '...';
+
+    try {
+      const resp = await fetch(`/api/projects/${taskId}/select-candidates`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selections: this._candidateSelections }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Selection failed');
+      document.getElementById('candidateModal').classList.add('hidden');
+      showToast(this.t('toast_tasks_queued'));
+      switchView('queue');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerText = this.t('candidate_confirm');
+    }
+  },
+
+  async regenerateAsset(sceneId, assetType) {
+    const taskId = this._candidateTaskId;
+    if (!taskId) return;
+    try {
+      const resp = await fetch(`/api/projects/${taskId}/regenerate-asset`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scene_id: sceneId, asset_type: assetType }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Regenerate failed');
+      // Reload candidate selection UI
+      this.showCandidateSelection(taskId, []);
+    } catch (e) {
+      alert(e.message);
+    }
+  },
+
+  startPolling() {
+    if (this.pollingTimer) clearInterval(this.pollingTimer);
+    this.pollingTimer = setInterval(() => this.poll(), 3000);
+  },
+
+  async poll() {
+    if (this.batchTasks.length === 0) { clearInterval(this.pollingTimer); return; }
+    let allDone = true;
+    for (const task of this.batchTasks) {
+      if (task.status === 'completed' || task.status === 'failed') continue;
+      allDone = false;
+      try {
+        const resp = await fetch(`/api/projects/${task.task_id}`);
+        const data = await resp.json();
+        task.status = data.status;
+        task.progress = data.progress || 0;
+        task.video_url = data.video_url || null;
+        task.error = data.error || null;
+        task.stage_label = this.t('status_labels')[data.status] || data.status;
+        if (data.technical_traceback) task.traceback = data.technical_traceback;
+      } catch (e) { /* ignore */ }
+    }
+    this.renderTaskList();
+    if (allDone) { clearInterval(this.pollingTimer); }
+  },
+
+  renderTaskList() {
+    const container = document.getElementById('taskList');
+    const empty = document.getElementById('emptyState');
+    if (this.batchTasks.length === 0) { this.showEmpty(); return; }
+    empty.style.display = 'none';
+
+    // V12.0: 精准局部更新,杜绝整体闪烁
+    const existingCards = {};
+    container.querySelectorAll('[data-task-id]').forEach(card => {
+      existingCards[card.dataset.taskId] = card;
+    });
+    const currentIds = new Set(this.batchTasks.map(t => t.task_id));
+    Object.keys(existingCards).forEach(id => {
+      if (!currentIds.has(id)) existingCards[id].remove();
+    });
+    this.batchTasks.forEach((task, i) => {
+      const existing = existingCards[task.task_id];
+      if (existing) {
+        this._updateTaskCardInPlace(existing, task);
+      } else {
+        const card = document.createElement('div');
+        card.className = 'card fade-in';
+        card.style.cssText = 'padding:16px;';
+        card.dataset.taskId = task.task_id;
+        card.dataset.status = task.status;
+        card.dataset.hasVideo = task.video_url ? '1' : '0';
+        this._renderTaskCardContent(card, task);
+        container.appendChild(card);
+      }
+    });
+  },
+
+  _updateTaskCardInPlace(card, task) {
+    // V12.0: 仅在状态跃迁时重建,否则只更新进度(丝滑无闪烁)
+    const prevStatus = card.dataset.status;
+    const prevHasVideo = card.dataset.hasVideo === '1';
+    const currHasVideo = !!task.video_url;
+    if (prevStatus !== task.status || prevHasVideo !== currHasVideo) {
+      card.dataset.status = task.status;
+      card.dataset.hasVideo = currHasVideo ? '1' : '0';
+      this._renderTaskCardContent(card, task);
+    } else {
+      const pct = Math.round(task.progress * 100);
+      const fill = card.querySelector('.progress-fill');
+      if (fill) fill.style.width = pct + '%';
+      const badge = card.querySelector('.status-badge');
+      if (badge) badge.innerText = task.stage_label;
+    }
+  },
+
+  _renderTaskCardContent(card, task) {
+    const statusClass = task.status === 'completed' ? 'status-completed' :
+                        task.status === 'failed' ? 'status-failed' :
+                        task.status === 'pending' ? 'status-pending' : 'status-running';
+    const langLabel = this.t('lang_labels')[task.language] || task.language;
+    const vibeLabel = this.t('vibe_labels')[task.vibe] || task.vibe;
+    card.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;font-weight:600;color:var(--text-primary);">${langLabel} · ${vibeLabel}</span>
+            ${task.script_index > 1 ? `<span style="font-size:11px;color:var(--text-muted);">#${task.script_index}</span>` : ''}
+          </div>
+          <span class="status-badge ${statusClass}">${task.stage_label}</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${Math.round(task.progress * 100)}%;"></div></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+          <span style="font-size:11px;color:var(--text-muted);font-family:monospace;">${task.task_id}</span>
+          <div style="display:flex;gap:8px;">
+            ${task.status === 'completed' && task.video_url ?
+              `<button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="GenerateModule.playVideo('${task.video_url}')">${this.t('download')}</button>` : ''}
+            ${task.status === 'failed' ?
+              `<span style="font-size:11px;color:var(--danger-color);">${task.error || 'Error'}</span>` : ''}
+          </div>
+        </div>`;
+  },
+
+  playVideo(url) {
+    const player = document.getElementById('videoPlayer');
+    player.src = url;
+    document.getElementById('videoModal').classList.remove('hidden');
+  },
+
+  showGenerating() {
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('taskList').innerHTML = `
+      <div class="card" style="padding:40px;text-align:center;">
+        <div class="spinner" style="width:32px;height:32px;margin:0 auto 12px;"></div>
+        <p style="font-size:14px;color:var(--text-secondary);">${this.t('director_generating')}</p>
+      </div>`;
+  },
+
+  showEmpty() {
+    document.getElementById('taskList').innerHTML = '';
+    document.getElementById('emptyState').style.display = 'block';
+  },
+
+  async handleCsvImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('csv_file', file);
+    try {
+      const resp = await fetch('/api/projects/import-csv', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'CSV import failed');
+      const count = data.total || (data.tasks || data.created || []).length;
+      showToast(`导入成功: ${count} 个任务已加入队列`);
+      switchView('queue');
+    } catch (err) { alert(err.message); }
+    e.target.value = '';
+  },
+
+  async handleZipDownload() {
+    const completedIds = this.batchTasks
+      .filter(t => t.status === 'completed' && t.video_url)
+      .map(t => t.task_id);
+    if (completedIds.length === 0) { alert('No completed videos to download'); return; }
+    window.open(`/api/projects/zip-download?task_ids=${completedIds.join(',')}`, '_blank');
+  },
+};
+
+// ======================================================================
+// HistoryModule
+// ======================================================================
+const HistoryModule = {
+  t(key) { return I18nModule.t(key); },
+
+  _getDateGroup(dateStr) {
+    const d = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const itemDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    if (itemDate.getTime() === today.getTime()) return this.t('date_today');
+    if (itemDate.getTime() === yesterday.getTime()) return this.t('date_yesterday');
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  },
+
+  async load() {
+    const list = document.getElementById('historyList');
+    const empty = document.getElementById('historyEmpty');
+    const breadcrumb = document.getElementById('historyBreadcrumb');
+    list.innerHTML = '<div class="spinner" style="margin:20px auto;"></div>';
+    empty.style.display = 'none';
+    breadcrumb.style.display = 'none';
+    try {
+      const resp = await fetch('/api/history?page=1&size=50');
+      const data = await resp.json();
+      if (!data.items || data.items.length === 0) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+      }
+      // V14.0: 缓存数据供文件夹内部视图复用
+      this._cachedItems = data.items;
+      this._renderFolderView();
+    } catch (e) {
+      list.innerHTML = `<p style="color:var(--danger-color);font-size:14px;">${e.message}</p>`;
+    }
+  },
+
+  // V14.0: 文件夹网格视图(默认)
+  _renderFolderView() {
+    const list = document.getElementById('historyList');
+    const breadcrumb = document.getElementById('historyBreadcrumb');
+    breadcrumb.style.display = 'none';
+
+    const groups = {};
+    this._cachedItems.forEach(item => {
+      const group = this._getDateGroup(item.created_at);
+      if (!groups[group]) groups[group] = [];
+      groups[group].push(item);
+    });
+    this._cachedGroups = groups;
+
+    list.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.className = 'folder-grid';
+    Object.entries(groups).forEach(([groupName, items]) => {
+      const folder = document.createElement('div');
+      folder.className = 'folder-card fade-in';
+      folder.innerHTML = `
+        <div class="folder-icon">📁</div>
+        <p class="folder-name">${groupName}</p>
+        <p class="folder-count">${(this.t('folder_count') || '{n} 个视频').replace('{n}', items.length)}</p>`;
+      folder.onclick = () => this._renderInteriorView(groupName, items);
+      grid.appendChild(folder);
+    });
+    list.appendChild(grid);
+  },
+
+  // V14.0: 文件夹内部视频网格视图 + 面包屑导航
+  _renderInteriorView(groupName, items) {
+    const list = document.getElementById('historyList');
+    const breadcrumb = document.getElementById('historyBreadcrumb');
+    const breadcrumbCurrent = document.getElementById('breadcrumbCurrent');
+    const backBtn = document.getElementById('breadcrumbBack');
+
+    breadcrumb.style.display = 'flex';
+    breadcrumbCurrent.innerText = `📁 ${groupName} (${items.length})`;
+    backBtn.onclick = () => this._renderFolderView();
+
+    list.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;';
+    items.forEach(item => {
+      const statusClass = item.status === 'completed' ? 'status-completed' :
+                          item.status === 'failed' ? 'status-failed' :
+                          item.status === 'awaiting_selection' ? 'status-running' :
+                          'status-running';
+      const statusLabel = this.t('status_labels')[item.status] || item.status;
+      const time = new Date(item.created_at).toLocaleTimeString();
+      const langLabel = this.t('lang_labels')[item.language] || item.language || '';
+      const vibeLabel = this.t('vibe_labels')[item.vibe] || item.vibe || '';
+      const thumb = item.final_video_url
+        ? `<video src="${item.final_video_url}" style="width:100%;height:140px;object-fit:cover;border-radius:10px;background:#000;" muted></video>`
+        : `<div style="width:100%;height:140px;border-radius:10px;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;font-size:36px;">🎬</div>`;
+      const isRunning = RUNNING_STATUSES.includes(item.status);
+      const showRetryBtn = !isRunning && !item.final_video_url;
+      // V14.1: 视频引擎标识
+      const engineBadgeHtml = item.video_engine ? QueueModule._engineBadge(item.video_engine) : '';
+      const retryBtnHtml = showRetryBtn ? `
+        <button class="btn-primary" style="flex:1;padding:6px;font-size:11px;"
+          onclick="event.stopPropagation();handleRetryComposite('${item.task_id}', this)">
+          ${this.t('retry_composite')}
+        </button>` : '';
+      const card = document.createElement('div');
+      card.className = 'card fade-in';
+      card.style.cssText = 'padding:12px;cursor:pointer;position:relative;';
+      card.innerHTML = `
+        <div style="position:absolute;top:8px;right:8px;z-index:2;">
+          <button class="btn-secondary" style="padding:4px 8px;font-size:11px;color:var(--danger-color);border-color:var(--danger-color);"
+            onclick="event.stopPropagation();HistoryModule.deleteTask('${item.task_id}')">🗑️</button>
+        </div>
+        ${thumb}
+        <div style="margin-top:10px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap;">
+            <span style="font-size:13px;font-weight:600;color:var(--text-primary);">${langLabel}${langLabel ? ' · ' : ''}${vibeLabel}</span>
+            <span class="status-badge ${statusClass}" style="font-size:10px;">${statusLabel}</span>
+            ${engineBadgeHtml}
+          </div>
+          <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">${time} · ${Math.round((item.progress || 0) * 100)}% · ${item.task_id}</p>
+          <div style="display:flex;gap:6px;">
+            ${retryBtnHtml}
+            <button class="btn-secondary" style="flex:1;padding:6px;font-size:11px;" onclick="event.stopPropagation();HistoryModule.openDrawer('${item.task_id}')">👁️</button>
+          </div>
+        </div>`;
+      card.onclick = () => this.openDrawer(item.task_id);
+      grid.appendChild(card);
+    });
+    list.appendChild(grid);
+  },
+
+  // V14.0: 删除单个任务
+  async deleteTask(taskId) {
+    if (!confirm(this.t('delete_confirm'))) return;
+    try {
+      const resp = await fetch(`/api/projects/${taskId}`, { method: 'DELETE' });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'HTTP ' + resp.status);
+      }
+      showToast(this.t('delete_success') + ' ✅');
+      // 从缓存中移除并重新渲染
+      this._cachedItems = (this._cachedItems || []).filter(i => i.task_id !== taskId);
+      if (this._cachedItems.length === 0) {
+        this.load();
+      } else {
+        this._renderFolderView();
+      }
+    } catch (e) {
+      alert(this.t('delete_failed') + ': ' + e.message);
+    }
+  },
+
+  // V9.0: Asset drawer (slide-in from right)
+  async openDrawer(taskId) {
+    const drawer = document.getElementById('assetDrawer');
+    const overlay = document.getElementById('assetDrawerOverlay');
+    const content = document.getElementById('drawerContent');
+    drawer.classList.add('open');
+    overlay.classList.add('open');
+    content.innerHTML = '<div class="spinner" style="margin:20px auto;"></div>';
+
+    try {
+      const resp = await fetch(`/api/history/${taskId}`);
+      const data = await resp.json();
+      const project = data.scenes_data || {};
+      const scenes = project.scenes || [];
+      let html = '';
+
+      // Final video section
+      html += `<div style="margin-bottom:24px;">`;
+      html += `<h4 style="font-size:14px;font-weight:600;color:var(--text-primary);margin:0 0 12px;">${this.t('asset_final_video')}</h4>`;
+      if (data.final_video_url) {
+        html += `
+          <video src="${data.final_video_url}" controls style="width:100%;border-radius:12px;background:#000;"></video>
+          <div style="margin-top:8px;">
+            <a href="${data.final_video_url}" download class="btn-secondary" style="font-size:12px;text-decoration:none;display:inline-block;">${this.t('download')}</a>
+          </div>`;
+      } else {
+        html += `<p style="font-size:13px;color:var(--text-muted);">${this.t('asset_no_video')}</p>`;
+      }
+      html += `</div>`;
+
+      // Scene assets section
+      if (scenes.length > 0) {
+        html += `<h4 style="font-size:14px;font-weight:600;color:var(--text-primary);margin:0 0 12px;">${this.t('asset_scenes')}</h4>`;
+        html += '<div style="display:flex;flex-direction:column;gap:16px;">';
+        scenes.forEach((scene, idx) => {
+          const imgUrl = scene.assets?.keyframe_image?.url || '';
+          const vidUrl = scene.assets?.video_clip?.url || '';
+          html += `
+            <div style="padding:14px;background:var(--bg-tertiary);border-radius:12px;border:1px solid var(--border-color);">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="width:24px;height:24px;border-radius:6px;background:var(--accent-gradient);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;">${idx + 1}</span>
+                <span style="font-size:12px;font-weight:600;color:var(--text-primary);">${this.t('storyboard_scene')} ${idx + 1}</span>
+              </div>
+              <p style="font-size:12px;color:var(--text-secondary);margin:0 0 10px;line-height:1.5;">${scene.narration || ''}</p>
+              <div style="display:flex;gap:10px;">
+                <div style="flex:1;">
+                  <p style="font-size:10px;color:var(--text-muted);margin:0 0 4px;text-transform:uppercase;">${this.t('asset_scene_image')}</p>
+                  ${imgUrl ? `<img src="${imgUrl}" style="width:100%;max-height:120px;object-fit:cover;border-radius:8px;" />` : '<div style="width:100%;height:80px;border-radius:8px;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;">📷</div>'}
+                </div>
+                <div style="flex:1;">
+                  <p style="font-size:10px;color:var(--text-muted);margin:0 0 4px;text-transform:uppercase;">${this.t('asset_scene_video')}</p>
+                  ${vidUrl ? `<video src="${vidUrl}" controls style="width:100%;max-height:120px;object-fit:cover;border-radius:8px;background:#000;"></video>` : '<div style="width:100%;height:80px;border-radius:8px;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;">🎬</div>'}
+                </div>
+              </div>
+            </div>`;
+        });
+        html += '</div>';
+      }
+
+      // Error info
+      if (data.error_message) {
+        html += `<div style="margin-top:16px;padding:12px;background:rgba(239,68,68,0.1);border-radius:8px;"><p style="font-size:12px;color:var(--danger-color);margin:0;">${data.error_message}</p></div>`;
+      }
+
+      content.innerHTML = html;
+    } catch (e) {
+      content.innerHTML = `<p style="color:var(--danger-color);">${e.message}</p>`;
+    }
+  },
+};
+
+// ======================================================================
+// ProductsModule
+// ======================================================================
+const ProductsModule = {
+  products: [],
+  t(key) { return I18nModule.t(key); },
+
+  async load() {
+    const tbody = document.getElementById('productsTableBody');
+    const empty = document.getElementById('productsEmpty');
+    tbody.innerHTML = '';
+    try {
+      const resp = await fetch('/api/products');
+      this.products = await resp.json();
+      if (this.products.length === 0) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      this.renderTable();
+    } catch (e) { console.error(e); }
+  },
+
+  renderTable() {
+    const tbody = document.getElementById('productsTableBody');
+    const search = (document.getElementById('productSearch')?.value || '').toLowerCase();
+    const filtered = this.products.filter(p =>
+      p.name.toLowerCase().includes(search) || (p.selling_points || '').toLowerCase().includes(search)
+    );
+    tbody.innerHTML = '';
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">无匹配结果</td></tr>`;
+      return;
+    }
+    filtered.forEach(p => {
+      const tr = document.createElement('tr');
+      const points = (p.selling_points || '').substring(0, 50) + ((p.selling_points || '').length > 50 ? '...' : '');
+      const thumb = (p.image_urls && p.image_urls.length > 0)
+        ? `<img src="${p.image_urls[0]}" style="width:48px;height:48px;object-fit:cover;border-radius:8px;" onerror="this.style.display='none'" />`
+        : '<div style="width:48px;height:48px;border-radius:8px;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;">📷</div>';
+      tr.innerHTML = `
+        <td style="font-weight:600;">${p.name}</td>
+        <td style="color:var(--text-secondary);font-size:13px;">${points}</td>
+        <td>${thumb}</td>
+        <td>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="ProductsModule.useProduct('${p.id}')">${this.t('use_product')}</button>
+            <button class="btn-danger" style="font-size:11px;" onclick="ProductsModule.deleteProduct('${p.id}')">${this.t('delete')}</button>
+          </div>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+  },
+
+  useProduct(id) {
+    const product = this.products.find(p => p.id === id);
+    if (!product) return;
+    switchView('studio');
+    setTimeout(() => {
+      document.getElementById('productSelect').value = id;
+      GenerateModule.onProductSelect(id);
+    }, 100);
+  },
+
+  async deleteProduct(id) {
+    if (!confirm('确认删除?')) return;
+    try {
+      const resp = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      if (!resp.ok) throw new Error('Delete failed');
+      this.load();
+    } catch (e) { alert(e.message); }
+  },
+
+  bindEvents() {
+    document.getElementById('productAddBtn').addEventListener('click', () => {
+      document.getElementById('productModal').classList.remove('hidden');
+    });
+    document.getElementById('productCancel').addEventListener('click', () => {
+      document.getElementById('productModal').classList.add('hidden');
+    });
+    document.getElementById('productSave').addEventListener('click', () => this.createProduct());
+    document.getElementById('productCsvBtn').addEventListener('click', () => {
+      document.getElementById('productCsvInput').click();
+    });
+    document.getElementById('productCsvInput').addEventListener('change', (e) => this.importCsv(e));
+    document.getElementById('productTemplateBtn').addEventListener('click', () => {
+      window.open('/api/products/template', '_blank');
+    });
+    document.getElementById('productSearch').addEventListener('input', () => this.renderTable());
+    document.getElementById('historyRefresh').addEventListener('click', () => HistoryModule.load());
+  },
+
+  async createProduct() {
+    const name = document.getElementById('newProductName').value.trim();
+    if (!name) { alert('请输入产品名称'); return; }
+    const points = document.getElementById('newProductPoints').value.trim();
+    const images = document.getElementById('newProductImages').value.trim();
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('selling_points', points);
+    formData.append('image_urls', images);
+    try {
+      const resp = await fetch('/api/products', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Create failed');
+      document.getElementById('productModal').classList.add('hidden');
+      document.getElementById('newProductName').value = '';
+      document.getElementById('newProductPoints').value = '';
+      document.getElementById('newProductImages').value = '';
+      this.load();
+    } catch (e) { alert(e.message); }
+  },
+
+  async importCsv(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('csv_file', file);
+    try {
+      const resp = await fetch('/api/products/import-csv', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Import failed');
+      alert(`导入成功: ${data.imported} 个产品` + (data.errors?.length ? `\n错误: ${data.errors.length} 行` : ''));
+      this.load();
+    } catch (err) { alert(err.message); }
+    e.target.value = '';
+  },
+};
+
+// ======================================================================
+// QueueModule (V9.0: 生成进度 - 2s high-freq polling)
+// ======================================================================
+const QueueModule = {
+  timer: null,
+  runningTasks: [],
+  t(key) { return I18nModule.t(key); },
+
+  start() {
+    this.poll();
+    if (this.timer) clearInterval(this.timer);
+    this.timer = setInterval(() => this.poll(), 2000);
+    document.getElementById('queuePulse').style.display = 'inline-block';
+    // Also bind refresh button
+    const refreshBtn = document.getElementById('queueRefresh');
+    if (refreshBtn) refreshBtn.onclick = () => this.poll();
+  },
+
+  stop() {
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    document.getElementById('queuePulse').style.display = 'none';
+  },
+
+  async poll() {
+    try {
+      const resp = await fetch('/api/history?page=1&size=50');
+      const data = await resp.json();
+      const allItems = data.items || [];
+      // V10.1 P0: 显示运行中任务 + 已停止但无最终视频的任务(需手动合成兜底)
+      this.runningTasks = allItems.filter(item => {
+        const isRunning = RUNNING_STATUSES.includes(item.status);
+        if (isRunning) return true;
+        // 已停止 → 仅在无 final_video_url 时显示(需要手动合成)
+        return !item.final_video_url;
+      });
+      this.render();
+    } catch (e) { /* ignore */ }
+  },
+
+  render() {
+    const list = document.getElementById('queueList');
+    const empty = document.getElementById('queueEmpty');
+    if (!list || !empty) return;
+
+    if (this.runningTasks.length === 0) {
+      list.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    // V12.0: 精准局部更新,杜绝整体闪烁
+    // 1. 收集当前 DOM 中已有的卡片
+    const existingCards = {};
+    list.querySelectorAll('[data-task-id]').forEach(card => {
+      existingCards[card.dataset.taskId] = card;
+    });
+    // 2. 收集本次数据的 task_id 集合
+    const currentIds = new Set(this.runningTasks.map(t => t.task_id));
+    // 3. 移除已不在列表中的卡片
+    Object.keys(existingCards).forEach(id => {
+      if (!currentIds.has(id)) existingCards[id].remove();
+    });
+    // 4. 更新或创建卡片(按顺序)
+    this.runningTasks.forEach(item => {
+      const existing = existingCards[item.task_id];
+      if (existing) {
+        this._updateCardInPlace(existing, item);
+      } else {
+        const card = this._createCard(item);
+        list.appendChild(card);
+      }
+    });
+  },
+
+  _createCard(item) {
+    const card = document.createElement('div');
+    card.className = 'card queue-card fade-in';
+    card.style.cssText = 'padding:16px;';
+    card.dataset.taskId = item.task_id;
+    card.dataset.status = item.status;
+    card.dataset.hasVideo = item.final_video_url ? '1' : '0';
+    this._renderCardContent(card, item);
+    return card;
+  },
+
+  _updateCardInPlace(card, item) {
+    // V12.0: 只在状态发生实质性跃迁时才重建内容,否则仅更新进度(无闪烁)
+    const prevStatus = card.dataset.status;
+    const prevHasVideo = card.dataset.hasVideo === '1';
+    const currHasVideo = !!item.final_video_url;
+    if (prevStatus !== item.status || prevHasVideo !== currHasVideo) {
+      card.dataset.status = item.status;
+      card.dataset.hasVideo = currHasVideo ? '1' : '0';
+      this._renderCardContent(card, item);
+    } else {
+      // 仅更新进度条 width + 百分比文本 + 状态标签(丝滑无闪烁)
+      const pct = Math.round((item.progress || 0) * 100);
+      const fill = card.querySelector('.progress-fill');
+      if (fill) fill.style.width = pct + '%';
+      const pctEl = card.querySelector('.pct-text');
+      if (pctEl) pctEl.innerText = pct + '%';
+      const badge = card.querySelector('.status-badge');
+      if (badge) {
+        badge.innerText = this.t('status_labels')[item.status] || item.status;
+      }
+    }
+  },
+
+  _renderCardContent(card, item) {
+    const statusLabel = this.t('status_labels')[item.status] || item.status;
+    const langLabel = this.t('lang_labels')[item.language] || item.language || '';
+    const vibeLabel = this.t('vibe_labels')[item.vibe] || item.vibe || '';
+    const pct = Math.round((item.progress || 0) * 100);
+    const date = new Date(item.created_at).toLocaleTimeString();
+    const isRunning = RUNNING_STATUSES.includes(item.status);
+    const showRetryBtn = !isRunning && !item.final_video_url;
+    const statusClass = isRunning ? 'status-running' : 'status-failed';
+    // V14.1: 视频引擎标识(happyhorse-1.1 / wan2.2-i2v-flash)
+    const engineBadgeHtml = item.video_engine ? this._engineBadge(item.video_engine) : '';
+    const retryBtnHtml = showRetryBtn ? `
+        <button class="btn-primary" style="flex:1;padding:10px;font-size:13px;"
+          onclick="handleRetryComposite('${item.task_id}', this)">
+          ${this.t('retry_composite')}
+        </button>` : '';
+    const deleteBtnHtml = `
+        <button class="btn-secondary" style="flex:1;padding:10px;font-size:13px;color:var(--danger-color);border-color:var(--danger-color);"
+          onclick="QueueModule.cancelAndDelete('${item.task_id}')">
+          🗑️ ${this.t('delete_task')}
+        </button>`;
+    const actionRow = (retryBtnHtml || deleteBtnHtml) ? `
+        <div style="display:flex;gap:8px;margin-top:12px;">${retryBtnHtml}${deleteBtnHtml}</div>` : '';
+    card.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:14px;font-weight:600;color:var(--text-primary);">${langLabel}${langLabel ? ' · ' : ''}${vibeLabel}</span>
+            <span class="status-badge ${statusClass}">${statusLabel}</span>
+            ${engineBadgeHtml}
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);font-family:monospace;">${item.task_id}</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;"></div></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+          <span style="font-size:11px;color:var(--text-muted);">${date}</span>
+          <span class="pct-text" style="font-size:13px;font-weight:600;color:var(--accent-color);">${pct}%</span>
+        </div>${actionRow}`;
+  },
+
+  // V14.1: 渲染视频引擎徽章
+  _engineBadge(engine) {
+    const map = {
+      'happyhorse-1.1-i2v': { icon: '🐎', label: 'HappyHorse 1.1', color: 'var(--accent-color)' },
+      'happyhorse-1.1': { icon: '🐎', label: 'HappyHorse 1.1', color: 'var(--accent-color)' },
+      'wan2.2-i2v-flash': { icon: '🎬', label: '通义万相', color: '#8b5cf6' },
+    };
+    const m = map[engine] || { icon: '🎥', label: engine, color: 'var(--text-muted)' };
+    return `<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:var(--bg-tertiary);color:${m.color};font-weight:600;border:1px solid var(--border-color);">${m.icon} ${m.label}</span>`;
+  },
+
+  // V14.0: 取消并删除任务
+  async cancelAndDelete(taskId) {
+    if (!confirm(this.t('delete_confirm'))) return;
+    try {
+      const resp = await fetch(`/api/projects/${taskId}`, { method: 'DELETE' });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'HTTP ' + resp.status);
+      }
+      showToast(this.t('delete_success') + ' ✅');
+      // 从 DOM 移除卡片
+      const card = document.querySelector(`[data-task-id="${taskId}"]`);
+      if (card) card.remove();
+      // 从 runningTasks 移除
+      this.runningTasks = (this.runningTasks || []).filter(t => t.task_id !== taskId);
+      // 如果列表空了,显示空状态
+      if (this.runningTasks.length === 0) {
+        this.render();
+      }
+    } catch (e) {
+      alert(this.t('delete_failed') + ': ' + e.message);
+    }
+  },
+};
+
+// ======================================================================
+// CloneModule (V15.0: 拍同款 — 视频模仿)
+// ======================================================================
+const CloneModule = {
+  videoFile: null,
+  imageFiles: [],
+  initialized: false,
+
+  t(key) { return I18nModule.t(key); },
+
+  init() {
+    if (this.initialized) return;
+    this.initialized = true;
+
+    // 视频上传
+    const videoDrop = document.getElementById('cloneVideoDropZone');
+    const videoInput = document.getElementById('cloneVideoInput');
+    videoDrop.addEventListener('click', () => videoInput.click());
+    videoDrop.addEventListener('dragover', (e) => { e.preventDefault(); videoDrop.style.borderColor = 'var(--accent-color)'; });
+    videoDrop.addEventListener('dragleave', () => { videoDrop.style.borderColor = 'var(--border-color)'; });
+    videoDrop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      videoDrop.style.borderColor = 'var(--border-color)';
+      if (e.dataTransfer.files[0]) this.handleVideoSelect(e.dataTransfer.files[0]);
+    });
+    videoInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) this.handleVideoSelect(e.target.files[0]);
+    });
+
+    // 图片上传
+    const imgDrop = document.getElementById('cloneImageDropZone');
+    const imgInput = document.getElementById('cloneImageInput');
+    imgDrop.addEventListener('click', () => imgInput.click());
+    imgDrop.addEventListener('dragover', (e) => { e.preventDefault(); imgDrop.style.borderColor = 'var(--accent-color)'; });
+    imgDrop.addEventListener('dragleave', () => { imgDrop.style.borderColor = 'var(--border-color)'; });
+    imgDrop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      imgDrop.style.borderColor = 'var(--border-color)';
+      const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+      if (files.length) this.handleImageSelect(files);
+    });
+    imgInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+      if (files.length) this.handleImageSelect(files);
+    });
+  },
+
+  handleVideoSelect(file) {
+    if (!file.type.startsWith('video/')) {
+      alert(this.t('clone_video_only') || '请上传视频文件');
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      alert(this.t('clone_video_too_large') || '视频超过50MB，请压缩后上传');
+      return;
+    }
+    this.videoFile = file;
+    const preview = document.getElementById('cloneVideoPreview');
+    const placeholder = document.getElementById('cloneVideoPlaceholder');
+    preview.src = URL.createObjectURL(file);
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+  },
+
+  handleImageSelect(files) {
+    this.imageFiles = [...this.imageFiles, ...files];
+    const preview = document.getElementById('cloneImagePreview');
+    preview.innerHTML = '';
+    this.imageFiles.forEach((f, idx) => {
+      const div = document.createElement('div');
+      div.style.cssText = 'position:relative;width:60px;height:60px;';
+      div.innerHTML = `
+        <img src="${URL.createObjectURL(f)}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--border-color);">
+        <button style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:var(--danger-color);color:#fff;border:none;font-size:10px;cursor:pointer;" onclick="CloneModule.removeImage(${idx})">×</button>`;
+      preview.appendChild(div);
+    });
+  },
+
+  removeImage(idx) {
+    this.imageFiles.splice(idx, 1);
+    this.handleImageSelect([]);
+  },
+
+  async submit() {
+    if (!this.videoFile) {
+      alert(this.t('clone_no_video') || '请上传参考视频');
+      return;
+    }
+    if (!this.imageFiles.length) {
+      alert(this.t('clone_no_images') || '请上传产品图');
+      return;
+    }
+    const productName = document.getElementById('cloneProductName').value.trim();
+    if (!productName) {
+      alert(this.t('clone_no_name') || '请填写产品名称');
+      return;
+    }
+
+    const btn = document.getElementById('cloneSubmitBtn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span>${this.t('submitting') || '提交中...'}</span>`;
+
+    const formData = new FormData();
+    formData.append('product_name', productName);
+    formData.append('selling_points', document.getElementById('cloneSellingPoints').value.trim());
+    formData.append('language', document.getElementById('cloneLanguage').value);
+    formData.append('vibe', document.getElementById('cloneVibe').value);
+    formData.append('product_material', document.getElementById('cloneMaterial').value);
+    formData.append('aspect_ratio', document.getElementById('cloneAspectRatio').value);
+    formData.append('enable_voiceover', document.getElementById('cloneVoiceover').checked);
+    formData.append('reference_video', this.videoFile);
+    this.imageFiles.forEach(f => formData.append('image_file', f));
+
+    try {
+      const resp = await fetch('/api/projects/clone', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.detail || 'HTTP ' + resp.status);
+      }
+      showToast(this.t('clone_success') || '拍同款任务已创建！正在分析视频...');
+      switchView('queue');
+    } catch (e) {
+      alert((this.t('clone_failed') || '创建失败') + ': ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  },
+};
+
+// ======================================================================
+// AgentModule (V10.0: AI 导演 — SSE 流式对话 + 业务卡片)
+// ======================================================================
+const AgentModule = {
+  history: [],        // [{role, content}]
+  sending: false,
+  currentBubble: null,
+  taskPollers: {},    // {task_id: intervalId}
+  t(key, vars) {
+    let s = I18nModule.t(key);
+    if (vars) for (const k in vars) s = s.replace(`{${k}}`, vars[k]);
+    return s;
+  },
+
+  init() {
+    const input = document.getElementById('agentInput');
+    const sendBtn = document.getElementById('agentSendBtn');
+    sendBtn.addEventListener('click', () => this.send());
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); }
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    });
+    document.getElementById('agentClearBtn').addEventListener('click', () => this.clear());
+    document.querySelectorAll('.agent-quick').forEach(btn => {
+      btn.addEventListener('click', () => {
+        input.value = btn.dataset.prompt;
+        this.send();
+      });
+    });
+  },
+
+  onShow() {
+    const messages = document.getElementById('agentMessages');
+    messages.scrollTop = messages.scrollHeight;
+  },
+
+  clear() {
+    this.history = [];
+    const messages = document.getElementById('agentMessages');
+    messages.innerHTML = '';
+    // 重建空状态
+    messages.innerHTML = `
+      <div id="agentEmpty" style="margin:auto;text-align:center;max-width:560px;">
+        <div style="font-size:48px;margin:0 0 12px;">🎬</div>
+        <p style="font-size:15px;font-weight:600;color:var(--text-primary);margin:0 0 6px;" data-i18n="agent_welcome">告诉我你想做什么</p>
+        <p style="font-size:12px;color:var(--text-muted);margin:0 0 20px;" data-i18n="agent_welcome_sub">描述产品、选择风格,AI 自动完成视频生成</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <button class="agent-quick" data-prompt="帮我搜索产品库里有什么杯子" data-i18n="agent_q1">🔍 搜索杯子产品</button>
+          <button class="agent-quick" data-prompt="用这张图帮我做一个英语带货视频 https://example.com/product.png 产品是保温杯 卖点 24小时保温,316不锈钢" data-i18n="agent_q2">🎥 生成带货视频</button>
+          <button class="agent-quick" data-prompt="产品库里有哪些产品可以做成视频?" data-i18n="agent_q3">📋 浏览产品库</button>
+          <button class="agent-quick" data-prompt="帮我生成一个泰语的轻奢风格化妆品视频" data-i18n="agent_q4">💎 泰语轻奢视频</button>
+        </div>
+      </div>`;
+    I18nModule.apply();
+    document.querySelectorAll('.agent-quick').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('agentInput').value = btn.dataset.prompt;
+        this.send();
+      });
+    });
+  },
+
+  hideEmpty() {
+    const empty = document.getElementById('agentEmpty');
+    if (empty) empty.remove();
+  },
+
+  addUserMessage(text) {
+    this.hideEmpty();
+    const messages = document.getElementById('agentMessages');
+    const wrap = document.createElement('div');
+    wrap.className = 'agent-msg agent-msg-user';
+    wrap.innerHTML = `
+      <div class="agent-avatar agent-avatar-user">🧑</div>
+      <div class="agent-bubble agent-bubble-user"></div>`;
+    wrap.querySelector('.agent-bubble').textContent = text;
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    this.history.push({ role: 'user', content: text });
+  },
+
+  createAIBubble() {
+    this.hideEmpty();
+    const messages = document.getElementById('agentMessages');
+    const wrap = document.createElement('div');
+    wrap.className = 'agent-msg';
+    wrap.innerHTML = `
+      <div class="agent-avatar agent-avatar-ai">🤖</div>
+      <div class="agent-bubble agent-bubble-ai"><span class="typing-cursor"></span></div>`;
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    return wrap.querySelector('.agent-bubble');
+  },
+
+  appendTextToBubble(bubble, text) {
+    // 追加文本到气泡,保留打字光标在末尾
+    const cursor = bubble.querySelector('.typing-cursor');
+    // 用 textNode 累积,避免 HTML 注入;换行处理
+    if (!bubble._textBuf) bubble._textBuf = '';
+    bubble._textBuf += text;
+    // 渲染:简单 markdown(段落/代码/加粗)
+    const rendered = this._renderMarkdown(bubble._textBuf);
+    if (cursor) {
+      bubble.innerHTML = rendered + '<span class="typing-cursor"></span>';
+    } else {
+      bubble.innerHTML = rendered;
+    }
+    const messages = document.getElementById('agentMessages');
+    messages.scrollTop = messages.scrollHeight;
+  },
+
+  finalizeBubble(bubble) {
+    const cursor = bubble.querySelector('.typing-cursor');
+    if (cursor) cursor.remove();
+    if (bubble._textBuf) {
+      bubble.innerHTML = this._renderMarkdown(bubble._textBuf);
+    }
+    // 存入历史
+    this.history.push({ role: 'assistant', content: bubble._textBuf || '' });
+  },
+
+  _renderMarkdown(text) {
+    // 极简 markdown: ```code```、`inline`、**bold**、换行
+    let html = text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    html = html.replace(/```([\s\S]*?)```/g, (m, c) => `<pre style="background:var(--bg-hover);padding:8px;border-radius:6px;overflow-x:auto;font-size:12px;margin:6px 0;"><code>${c}</code></pre>`);
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // 段落:连续两个换行=新段落,单个换行=<br>
+    const paras = html.split(/\n{2,}/);
+    return paras.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+  },
+
+  addCard(html) {
+    const messages = document.getElementById('agentMessages');
+    const wrap = document.createElement('div');
+    wrap.className = 'agent-msg';
+    wrap.innerHTML = `
+      <div class="agent-avatar agent-avatar-ai">🤖</div>
+      <div class="agent-bubble agent-bubble-ai"></div>`;
+    const bubble = wrap.querySelector('.agent-bubble');
+    bubble.innerHTML = html;
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+    return wrap;
+  },
+
+  setSending(sending) {
+    this.sending = sending;
+    document.getElementById('agentSendText').style.display = sending ? 'none' : '';
+    document.getElementById('agentSendSpinner').style.display = sending ? 'inline-block' : 'none';
+    document.getElementById('agentInput').disabled = sending;
+  },
+
+  async send() {
+    if (this.sending) return;
+    const input = document.getElementById('agentInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    input.style.height = 'auto';
+    this.addUserMessage(text);
+    this._newAIBubble();
+    this.setSending(true);
+
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, history: this.history.slice(-10) }),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        this.appendTextToBubble(this.currentBubble, `❌ 请求失败 (HTTP ${resp.status}): ${errText.slice(0, 200)}`);
+        this.finalizeBubble(this.currentBubble);
+        return;
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // 解析 SSE 事件(以 data: 开头,\n\n 分隔)
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+          const rawEvent = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const lines = rawEvent.split('\n');
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const dataStr = line.slice(5).trim();
+            if (!dataStr) continue;
+            let event;
+            try { event = JSON.parse(dataStr); } catch (e) { continue; }
+            this._handleEvent(event);
+          }
+        }
+      }
+      this.finalizeBubble(this.currentBubble);
+    } catch (e) {
+      this.appendTextToBubble(this.currentBubble, `❌ 网络错误: ${e.message}`);
+      this.finalizeBubble(this.currentBubble);
+    } finally {
+      this.setSending(false);
+    }
+  },
+
+  _newAIBubble() {
+    this.currentBubble = this.createAIBubble();
+  },
+
+  _handleEvent(event) {
+    if (event.type === 'text') {
+      this.appendTextToBubble(this.currentBubble, event.content || '');
+    } else if (event.type === 'action') {
+      // 先结束当前文本气泡
+      this.finalizeBubble(this.currentBubble);
+      const payload = event.payload || {};
+      if (payload.action_type === 'task_created') {
+        this._renderTaskCard(payload);
+      } else if (payload.action_type === 'product_found') {
+        this._renderProductCard(payload);
+      }
+      // 创建新气泡接续后续文本(第二轮总结)
+      this._newAIBubble();
+    } else if (event.type === 'error') {
+      this.appendTextToBubble(this.currentBubble, `⚠️ ${event.content || '未知错误'}`);
+    }
+    // done 事件:忽略,finalize 由 send() 处理
+  },
+
+  _renderTaskCard(payload) {
+    const taskId = payload.task_id;
+    const productName = payload.product_name || '';
+    const card = this.addCard(`
+      <div class="agent-card">
+        <p class="agent-card-title">${this.t('agent_task_card')}</p>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="flex:1;">
+            <div style="font-size:14px;font-weight:600;color:var(--text-primary);">${this._escape(productName)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ID: ${taskId}</div>
+          </div>
+          <button class="btn-primary" style="font-size:11px;padding:6px 12px;" onclick="switchView('queue')">${this.t('agent_task_view')}</button>
+        </div>
+        <div id="task-progress-${taskId}" style="margin-top:10px;">
+          <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary);">
+            <div class="spinner" style="width:12px;height:12px;border-width:2px;"></div>
+            <span>${this.t('agent_task_polling')}...</span>
+          </div>
+        </div>
+      </div>`);
+    // 启动轮询
+    this._startTaskPoll(taskId);
+  },
+
+  _startTaskPoll(taskId) {
+    if (this.taskPollers[taskId]) return;
+    const poll = async () => {
+      try {
+        const resp = await fetch(`/api/projects/${taskId}`);
+        const data = await resp.json();
+        const box = document.getElementById(`task-progress-${taskId}`);
+        if (!box) { this._stopTaskPoll(taskId); return; }
+        const status = data.status || 'pending';
+        const progress = data.progress || 0;
+        const stageLabel = this.t('status_labels.' + status) || status;
+        const isTerminal = (status === 'completed' || status === 'failed');
+        let videoHtml = '';
+        if (status === 'completed' && data.video_url) {
+          videoHtml = `<video src="${data.video_url}" controls style="width:100%;border-radius:8px;margin-top:8px;"></video>`;
+        }
+        let errHtml = '';
+        if (status === 'failed' && data.error) {
+          errHtml = `<div style="font-size:11px;color:var(--danger-color);margin-top:6px;word-break:break-word;">${this._escape(data.error.slice(0, 300))}</div>`;
+        }
+        box.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;">
+            <span style="color:var(--text-secondary);">${stageLabel}</span>
+            <span style="color:var(--text-primary);font-weight:600;">${Math.round(progress)}%</span>
+          </div>
+          <div style="height:4px;background:var(--bg-hover);border-radius:2px;margin-top:6px;overflow:hidden;">
+            <div style="width:${progress}%;height:100%;background:var(--accent-gradient);transition:width 0.5s;"></div>
+          </div>
+          ${videoHtml}${errHtml}`;
+        if (isTerminal) this._stopTaskPoll(taskId);
+      } catch (e) { /* 静默重试 */ }
+    };
+    poll();
+    this.taskPollers[taskId] = setInterval(poll, 3000);
+  },
+
+  _stopTaskPoll(taskId) {
+    if (this.taskPollers[taskId]) {
+      clearInterval(this.taskPollers[taskId]);
+      delete this.taskPollers[taskId];
+    }
+  },
+
+  _renderProductCard(payload) {
+    const products = payload.products || [];
+    const count = payload.count || products.length;
+    const card = this.addCard(`
+      <div class="agent-card">
+        <p class="agent-card-title">${this.t('agent_product_card', { n: count })}</p>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${products.map(p => `
+            <div style="display:flex;gap:10px;align-items:center;padding:8px;background:var(--bg-secondary);border-radius:8px;">
+              ${(p.image_urls && p.image_urls[0])
+                ? `<img src="${p.image_urls[0]}" style="width:40px;height:40px;border-radius:6px;object-fit:cover;" onerror="this.style.display='none'" />`
+                : `<div style="width:40px;height:40px;border-radius:6px;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;">📦</div>`}
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${this._escape(p.name || '')}</div>
+                <div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${this._escape((p.selling_points || '').slice(0, 60))}</div>
+              </div>
+              <button class="btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="AgentModule.useProduct('${p.id}')">${this.t('agent_product_use')}</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>`);
+  },
+
+  useProduct(productId) {
+    switchView('studio');
+    setTimeout(() => {
+      const sel = document.getElementById('productSelect');
+      if (sel) {
+        sel.value = productId;
+        GenerateModule.onProductSelect(productId);
+      }
+    }, 100);
+  },
+
+  _escape(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  },
+};
+
+// ======================================================================
+// V10.1 P0: 手动合成兜底 — 全局函数(供 Queue/History 卡片按钮调用)
+// ======================================================================
+async function handleRetryComposite(taskId, btn) {
+  if (!taskId) return;
+  const t = (k) => I18nModule.t(k);
+  const originalText = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = t('retry_composite_ing');
+
+  try {
+    const resp = await fetch(`/api/projects/${taskId}/retry-composite`, { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || data.message || `HTTP ${resp.status}`);
+    }
+
+    // 轮询任务状态,直到完成或失败
+    const pollStatus = async () => {
+      let attempts = 0;
+      const maxAttempts = 120;  // 最多 120 次 × 2s = 240s
+      while (attempts < maxAttempts) {
+        try {
+          const r = await fetch(`/api/history/${taskId}`);
+          const d = await r.json();
+          if (d.status === 'completed' && d.final_video_url) {
+            btn.innerText = t('retry_composite_success');
+            btn.style.background = 'var(--success-color)';
+            // 刷新当前视图
+            setTimeout(() => {
+              if (document.getElementById('view-queue').classList.contains('active')) QueueModule.poll();
+              if (document.getElementById('view-history').classList.contains('active')) HistoryModule.load();
+            }, 800);
+            return;
+          }
+          if (d.status === 'failed') {
+            throw new Error(d.error || d.error_message || '合成失败');
+          }
+        } catch (e) {
+          // 单次轮询失败不终止,继续重试
+        }
+        attempts++;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      throw new Error('合成超时(240s),请稍后在历史中查看结果');
+    };
+    await pollStatus();
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerText = originalText;
+    alert(`${t('retry_composite_failed')}: ${e.message}`);
+  }
+}
+
+// ======================================================================
+// Init
+// ======================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  ThemeModule.init();
+  I18nModule.apply();
+  GenerateModule.init();
+  ProductsModule.bindEvents();
+  GenerateModule.loadProducts();
+  AgentModule.init();
+
+  // V11.0 AI 导演引导卡片点击
+  const guideCard = document.getElementById('agentGuideCard');
+  if (guideCard) guideCard.addEventListener('click', () => switchView('agent'));
+
+  // V9.0: Asset drawer close
+  document.getElementById('drawerClose').addEventListener('click', () => {
+    document.getElementById('assetDrawer').classList.remove('open');
+    document.getElementById('assetDrawerOverlay').classList.remove('open');
+  });
+  document.getElementById('assetDrawerOverlay').addEventListener('click', () => {
+    document.getElementById('assetDrawer').classList.remove('open');
+    document.getElementById('assetDrawerOverlay').classList.remove('open');
+  });
+
+  // V9.0: Candidate modal events
+  document.getElementById('candidateClose').addEventListener('click', () => {
+    document.getElementById('candidateModal').classList.add('hidden');
+  });
+  document.getElementById('candidateConfirm').addEventListener('click', () => GenerateModule.confirmCandidates());
+
+  // V9.0: Queue refresh button
+  const queueRefresh = document.getElementById('queueRefresh');
+  if (queueRefresh) queueRefresh.addEventListener('click', () => QueueModule.poll());
+});
+</script>
+</body>
+</html>
