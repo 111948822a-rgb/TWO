@@ -1,0 +1,30 @@
+# Render 部署描述文件(确定性配置,避免控制台 Start Command 与 Dockerfile CMD 冲突)
+# 文档: https://render.com/docs/yaml-spec
+#
+# 重要: 若 Render 控制台(服务 Settings)里手动填写了 "Start Command",
+# 它会覆盖本文件与 Dockerfile 的 CMD,导致不可预期的启动失败。
+# 如曾填过,请清空控制台 Start Command,让本文件/Dockerfile 生效。
+
+services:
+  - type: web
+    name: ai-video-commerce
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # 显式声明启动命令,与 Dockerfile 一致
+    startCommand: gunicorn app.main:app -w 2 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --timeout 300
+    # 健康检查:前端页面挂在 "/" ,返回 200 即视为存活
+    healthCheckPath: /
+    envVars:
+      - key: DEBUG
+        value: "false"
+      # PORT 由 Render 自动注入,切勿写死;这里仅声明由平台同步
+      - key: PORT
+        sync: false
+    # 持久化磁盘:必须与 Dockerfile 中 /app/data、/app/storage 完全一致
+    disks:
+      - name: data
+        mountPath: /app/data
+        sizeGB: 1
+      - name: storage
+        mountPath: /app/storage
+        sizeGB: 10

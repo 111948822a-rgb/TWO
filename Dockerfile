@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY . /app
 
-RUN mkdir -p /app/data /app/storage
+RUN mkdir -p /app/data /app/storage \
+    && chmod +x /app/start.sh
 
-CMD gunicorn app.main:app -w 2 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --timeout 300
+# 通过 start.sh 启动:打印运行环境 + 执行 gunicorn,便于排查部署问题。
+# 若 Render 控制台未单独设置 Start Command,则以下默认 CMD 生效。
+CMD ["sh", "/app/start.sh"]
