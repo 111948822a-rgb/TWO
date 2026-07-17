@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -27,6 +28,12 @@ from app.core.database import init_db
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+# 启动诊断日志:确认 Python 解释器确实开始执行(用于排查 Docker 启动 Exited 128 类问题)
+print(
+    f"🚀 [Startup] 应用正在启动... 当前 PORT 环境变量为: {os.environ.get('PORT', '未设置')}",
+    flush=True,
 )
 
 app = FastAPI(title="AI 带货视频生成系统", version="10.0.0")

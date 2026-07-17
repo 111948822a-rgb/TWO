@@ -1,0 +1,27 @@
+﻿# 敏感配置(严禁提交)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 存储
+storage/
+outputs/
+uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker / 部署产物
+data/
+*.db
+*.db-shm
+*.db-wal
+
