@@ -151,20 +151,40 @@ class HappyHorseVideoProvider(IVideoProvider):
             "动态表现力通过 Prompt 中的电影级运镜词汇控制"
         )
         logger.info("[HappyHorse] Request Payload: %s", payload)
+        logger.info(
+            "[HappyHorse] >>> 提交请求 model=%s | img_url=%s | prompt=%s",
+            self.model, img_url, prompt,
+        )
         logger.info("=" * 60)
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(
                 CREATE_URL, headers=headers, json=payload
             )
+            http_status = resp.status_code
             resp_text = resp.text
-            logger.info(
-                "[HappyHorse] Submit Response (HTTP %d): %s",
-                resp.status_code,
-                resp_text[:500],
+            # V16.2: 强制暴露真实死因 —— 非 2xx 直接抛出完整响应体
+            logger.error(
+                "[HappyHorse] <<< 提交响应 (HTTP %d): %s",
+                http_status, resp_text[:1000],
             )
-            resp.raise_for_status()
-            data = resp.json()
+            if http_status < 200 or http_status >= 300:
+                raise RuntimeError(
+                    f"HappyHorse 提交任务失败 (HTTP {http_status}): {resp_text[:800]}"
+                )
+            try:
+                data = resp.json()
+            except Exception:
+                raise RuntimeError(
+                    f"HappyHorse 返回非 JSON 响应 (HTTP {http_status}): {resp_text[:800]}"
+                )
+            # DashScope 错误体形如 {"code": "InvalidParameter", "message": "..."}
+            err_code = data.get("code")
+            err_msg = data.get("message")
+            if err_code and err_msg:
+                raise RuntimeError(
+                    f"HappyHorse 提交任务失败 [code={err_code}]: {err_msg} (HTTP {http_status})"
+                )
 
         task_id = data.get("output", {}).get("task_id")
         if not task_id:
@@ -182,8 +202,29 @@ class HappyHorseVideoProvider(IVideoProvider):
             for attempt in range(1, POLL_MAX_ATTEMPTS + 1):
                 await asyncio.sleep(POLL_INTERVAL)
                 resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
+                http_status = resp.status_code
+                resp_text = resp.text
+                # V16.2: 传输层错误(非 2xx)也暴露完整响应体
+                if http_status < 200 or http_status >= 300:
+                    raise RuntimeError(
+                        f"HappyHorse 查询任务失败 (HTTP {http_status}) "
+                        f"task_id={task_id}: {resp_text[:800]}"
+                    )
+                try:
+                    data = resp.json()
+                except Exception:
+                    raise RuntimeError(
+                        f"HappyHorse 查询返回非 JSON 响应 (HTTP {http_status}) "
+                        f"task_id={task_id}: {resp_text[:800]}"
+                    )
+                # DashScope 查询接口错误体: {"code": "...", "message": "..."}
+                err_code = data.get("code")
+                err_msg = data.get("message")
+                if err_code and err_msg:
+                    raise RuntimeError(
+                        f"HappyHorse 任务查询失败 [code={err_code}]: "
+                        f"{err_msg} (task_id={task_id})"
+                    )
 
                 output = data.get("output", {})
                 status = output.get("task_status")
@@ -205,7 +246,8 @@ class HappyHorseVideoProvider(IVideoProvider):
                     )
 
         raise RuntimeError(
-            f"HappyHorse 视频生成超时({POLL_MAX_ATTEMPTS * POLL_INTERVAL:.0f}s)"
+            f"HappyHorse 视频生成超时({POLL_MAX_ATTEMPTS * POLL_INTERVAL:.0f}s) "
+            f"task_id={task_id}"
         )
 
     @staticmethod

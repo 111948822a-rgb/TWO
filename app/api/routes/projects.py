@@ -190,7 +190,7 @@ async def _run_safe(
 async def _run_batch_sequential(projects: List[VideoProject]) -> None:
     """批量任务串行执行(规避阿里云 API 并发限流)。
 
-    通义万相图片/视频接口"同时处理中任务数=1",
+    图片(通义万相)/视频(HappyHorse 1.1) 接口"同时处理中任务数=1",
     多个任务若并发会触发限流,故同批内串行。
     """
     for i, project in enumerate(projects):

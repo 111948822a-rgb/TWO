@@ -126,12 +126,14 @@ class ProductInput(BaseModel):
 class ProjectConfig(BaseModel):
     """Provider 与运行时配置。
 
-    默认全部使用阿里系(DeepSeek + 通义万相 + CosyVoice)。
+    默认: LLM=DeepSeek、图片=通义万相(tongyi_wanxiang)、
+    视频=HappyHorse 1.1(happyhorse)、TTS=CosyVoice。
+    视频引擎自 V16.2 起唯一锁定 HappyHorse 1.1,不再使用通义万相视频。
     """
 
     llm_provider: str = "deepseek"
     image_provider: str = "tongyi_wanxiang"
-    video_provider: str = "tongyi_video"
+    video_provider: str = "happyhorse"
     tts_provider: str = "cosyvoice"
     bgm_url: Optional[str] = Field(None, description="BGM 音频 URL,可选")
     concurrency: int = Field(

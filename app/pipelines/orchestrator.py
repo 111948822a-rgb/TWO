@@ -200,14 +200,15 @@ async def stage_image_gen(project: VideoProject) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 阶段 ③ 视频生成(已接入通义万相 wan2.2-i2v-flash,串行执行规避限流)
+# 阶段 ③ 视频生成(唯一引擎: HappyHorse 1.1,串行执行规避限流)
 # ---------------------------------------------------------------------------
 
 async def stage_video_gen(project: VideoProject) -> None:
     """阶段 ③:生成视频片段(图生视频 + 强制运镜 prompt)。
 
-    通义万相视频生成限流"同时处理中任务数=1",故串行执行。
-    VideoGenerator 会强制校验 video_prompt 非空,拒绝默认推拉摇移。
+    唯一视频引擎 HappyHorse 1.1。VideoGenerator 已移除所有 fallback,
+    HappyHorse 失败即抛出,本阶段捕获后标记该分镜 failed 并记录详细错误。
+    VideoGenerator 仍会强制校验 video_prompt 非空,拒绝默认推拉摇移。
 
     V9.0 Director Mode Pro:当 candidates_per_scene > 1 时,为每个分镜
     生成 N 个候选视频存入 scene.candidate_videos,供用户选择。

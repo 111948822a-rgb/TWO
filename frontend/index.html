@@ -2340,8 +2340,8 @@ const HistoryModule = {
         : `<div style="width:100%;height:140px;border-radius:10px;background:var(--bg-hover);display:flex;align-items:center;justify-content:center;font-size:36px;">🎬</div>`;
       const isRunning = RUNNING_STATUSES.includes(item.status);
       const showRetryBtn = !isRunning && !item.final_video_url;
-      // V14.1: 视频引擎标识
-      const engineBadgeHtml = item.video_engine ? QueueModule._engineBadge(item.video_engine) : '';
+      // V16.2: 视频引擎徽章固定为 HappyHorse 1.1
+      const engineBadgeHtml = item.video_engine ? QueueModule._engineBadge() : '';
       const retryBtnHtml = showRetryBtn ? `
         <button class="btn-primary" style="flex:1;padding:6px;font-size:11px;"
           onclick="event.stopPropagation();handleRetryComposite('${item.task_id}', this)">
@@ -2714,8 +2714,8 @@ const QueueModule = {
     const isRunning = RUNNING_STATUSES.includes(item.status);
     const showRetryBtn = !isRunning && !item.final_video_url;
     const statusClass = isRunning ? 'status-running' : 'status-failed';
-    // V14.1: 视频引擎标识(happyhorse-1.1 / wan2.2-i2v-flash)
-    const engineBadgeHtml = item.video_engine ? this._engineBadge(item.video_engine) : '';
+    // V16.2: 视频引擎徽章固定为 HappyHorse 1.1
+    const engineBadgeHtml = item.video_engine ? this._engineBadge() : '';
     const retryBtnHtml = showRetryBtn ? `
         <button class="btn-primary" style="flex:1;padding:10px;font-size:13px;"
           onclick="handleRetryComposite('${item.task_id}', this)">
@@ -2728,6 +2728,13 @@ const QueueModule = {
         </button>`;
     const actionRow = (retryBtnHtml || deleteBtnHtml) ? `
         <div style="display:flex;gap:8px;margin-top:12px;">${retryBtnHtml}${deleteBtnHtml}</div>` : '';
+    // V16.2: 失败任务在历史列表直接展示 HappyHorse 真实死因
+    const esc = (s) => String(s).replace(/[&<>"']/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+    const errorHtml = (item.status === 'failed' && item.error_message)
+      ? `<div style="margin-top:10px;padding:8px 10px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.3);"><p style="font-size:11px;color:var(--danger-color);margin:0;word-break:break-word;white-space:pre-wrap;">⚠️ ${esc((item.error_message || '').slice(0, 400))}</p></div>`
+      : '';
     card.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
           <div style="display:flex;align-items:center;gap:8px;">
@@ -2741,18 +2748,12 @@ const QueueModule = {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
           <span style="font-size:11px;color:var(--text-muted);">${date}</span>
           <span class="pct-text" style="font-size:13px;font-weight:600;color:var(--accent-color);">${pct}%</span>
-        </div>${actionRow}`;
+        </div>${actionRow}${errorHtml}`;
   },
 
-  // V14.1: 渲染视频引擎徽章
-  _engineBadge(engine) {
-    const map = {
-      'happyhorse-1.1-i2v': { icon: '🐎', label: 'HappyHorse 1.1', color: 'var(--accent-color)' },
-      'happyhorse-1.1': { icon: '🐎', label: 'HappyHorse 1.1', color: 'var(--accent-color)' },
-      'wan2.2-i2v-flash': { icon: '🎬', label: '通义万相', color: '#8b5cf6' },
-    };
-    const m = map[engine] || { icon: '🎥', label: engine, color: 'var(--text-muted)' };
-    return `<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:var(--bg-tertiary);color:${m.color};font-weight:600;border:1px solid var(--border-color);">${m.icon} ${m.label}</span>`;
+  // V16.2: 系统唯一视频引擎 = HappyHorse 1.1(已彻底移除通义万相视频兜底),固定显示,不再做动态判断
+  _engineBadge() {
+    return `<span style="font-size:10px;padding:2px 6px;border-radius:6px;background:var(--bg-tertiary);color:var(--accent-color);font-weight:600;border:1px solid var(--border-color);">🐎 HappyHorse 1.1</span>`;
   },
 
   // V14.0: 取消并删除任务
