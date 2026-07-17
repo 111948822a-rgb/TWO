@@ -430,6 +430,54 @@
       animation: toastIn 0.3s ease;
     }
     @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+    /* ======================================================================
+       V17.0 Auth View (全屏登录/注册遮罩 · 毛玻璃)
+       ====================================================================== */
+    .auth-overlay {
+      position: fixed; inset: 0; z-index: 1000;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
+      padding: 24px;
+    }
+    .auth-card {
+      width: 100%; max-width: 400px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 32px 28px;
+      animation: authIn 0.4s ease;
+    }
+    @keyframes authIn { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
+    .auth-tabs { display: flex; gap: 6px; background: var(--bg-tertiary); border-radius: 12px; padding: 4px; margin-bottom: 22px; }
+    .auth-tab {
+      flex: 1; text-align: center; padding: 9px 0; font-size: 13px; font-weight: 600;
+      border-radius: 9px; cursor: pointer; color: var(--text-secondary);
+      border: none; background: none; transition: all 0.2s;
+    }
+    .auth-tab.active { background: var(--bg-primary); color: var(--text-primary); box-shadow: var(--shadow); }
+    .auth-form { display: flex; flex-direction: column; gap: 12px; }
+    .auth-error { font-size: 12px; color: var(--danger-color); min-height: 16px; margin-top: 2px; }
+    .auth-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 2px; }
+    .input-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 2px; display: block; }
+    .btn-primary { display: inline-flex; align-items: center; justify-content: center; }
+    /* 视频卡片创建者标记 */
+    .creator-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; font-weight: 600; color: var(--text-secondary);
+      background: var(--bg-tertiary); border: 1px solid var(--border-color);
+      border-radius: 999px; padding: 2px 8px;
+    }
+    /* Sidebar 用户信息 */
+    .user-avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: var(--accent-gradient); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
   </style>
 </head>
 <body>
@@ -479,6 +527,8 @@
     </nav>
 
     <div class="sidebar-footer">
+      <!-- V17.0: 当前登录用户信息(显示名 + 退出) -->
+      <div id="sidebarUser" style="margin-bottom:12px;"></div>
       <!-- Theme Switcher -->
       <div style="margin-bottom:12px;">
         <p style="font-size:10px;color:var(--text-muted);margin:0 0 8px 4px;text-transform:uppercase;letter-spacing:0.5px;" data-i18n="theme">主题</p>
@@ -1107,6 +1157,61 @@
     </div>
   </div>
 </div>
+
+  <!-- ===================================================================
+       V17.0 AUTH VIEW (全屏登录/注册遮罩 · 毛玻璃)
+       =================================================================== -->
+  <div id="authOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <div style="text-align:center;margin-bottom:22px;">
+        <div class="sidebar-logo-icon" style="width:48px;height:48px;font-size:24px;margin:0 auto 12px;border-radius:14px;">🎬</div>
+        <h1 style="font-size:21px;font-weight:700;color:var(--text-primary);margin:0;letter-spacing:-0.5px;">Commerce Video Studio</h1>
+        <p style="font-size:13px;color:var(--text-secondary);margin:6px 0 0;">内部协作平台 · 请登录或注册以继续使用</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button id="authTabLogin" class="auth-tab active" onclick="AuthModule.switchTab('login')">登录</button>
+        <button id="authTabRegister" class="auth-tab" onclick="AuthModule.switchTab('register')">注册</button>
+      </div>
+
+      <!-- 登录表单 -->
+      <form id="loginForm" class="auth-form" onsubmit="return AuthModule.submitLogin(event)">
+        <div>
+          <label class="input-label" for="loginUsername">用户名</label>
+          <input id="loginUsername" class="input-base" type="text" autocomplete="username" placeholder="请输入用户名" />
+        </div>
+        <div>
+          <label class="input-label" for="loginPassword">密码</label>
+          <input id="loginPassword" class="input-base" type="password" autocomplete="current-password" placeholder="请输入密码" />
+        </div>
+        <div id="loginError" class="auth-error"></div>
+        <button type="submit" class="btn-primary" style="width:100%;">登 录</button>
+      </form>
+
+      <!-- 注册表单 -->
+      <form id="registerForm" class="auth-form" style="display:none;" onsubmit="return AuthModule.submitRegister(event)">
+        <div>
+          <label class="input-label" for="regUsername">用户名</label>
+          <input id="regUsername" class="input-base" type="text" autocomplete="username" placeholder="3-32位, 字母/数字/_/-" />
+        </div>
+        <div>
+          <label class="input-label" for="regDisplayName">显示名称(昵称)</label>
+          <input id="regDisplayName" class="input-base" type="text" placeholder="团队内展示的名字, 如 小明" />
+        </div>
+        <div>
+          <label class="input-label" for="regPassword">密码</label>
+          <input id="regPassword" class="input-base" type="password" autocomplete="new-password" placeholder="至少 6 位" />
+        </div>
+        <div>
+          <label class="input-label" for="regPassword2">确认密码</label>
+          <input id="regPassword2" class="input-base" type="password" autocomplete="new-password" placeholder="再次输入密码" />
+        </div>
+        <div id="registerError" class="auth-error"></div>
+        <button type="submit" class="btn-primary" style="width:100%;">注 册</button>
+        <p class="auth-hint">注册即表示该账号仅用于内部协作</p>
+      </form>
+    </div>
+  </div>
 
 <script>
 // ======================================================================
@@ -2342,6 +2447,10 @@ const HistoryModule = {
       const showRetryBtn = !isRunning && !item.final_video_url;
       // V16.2: 视频引擎徽章固定为 HappyHorse 1.1
       const engineBadgeHtml = item.video_engine ? QueueModule._engineBadge() : '';
+      // V17.0: 创建者标记(全员共享历史下追溯来源, 显示名经转义防 XSS)
+      const creatorHtml = item.creator_name
+        ? `<span class="creator-badge">👤 ${escapeHtml(item.creator_name)}</span>`
+        : '';
       const retryBtnHtml = showRetryBtn ? `
         <button class="btn-primary" style="flex:1;padding:6px;font-size:11px;"
           onclick="event.stopPropagation();handleRetryComposite('${item.task_id}', this)">
@@ -2361,6 +2470,7 @@ const HistoryModule = {
             <span style="font-size:13px;font-weight:600;color:var(--text-primary);">${langLabel}${langLabel ? ' · ' : ''}${vibeLabel}</span>
             <span class="status-badge ${statusClass}" style="font-size:10px;">${statusLabel}</span>
             ${engineBadgeHtml}
+            ${creatorHtml}
           </div>
           <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">${time} · ${Math.round((item.progress || 0) * 100)}% · ${item.task_id}</p>
           <div style="display:flex;gap:6px;">
@@ -3435,6 +3545,190 @@ const DashboardModule = {
 document.addEventListener('DOMContentLoaded', () => {
   ThemeModule.init();
   I18nModule.apply();
+  // V17.0: 全局路由守卫 —— 先校验登录态, 成功后才初始化应用
+  AuthModule.init();
+});
+
+// ======================================================================
+// V17.0 AuthModule (极简注册登录 + 全局路由守卫)
+// ======================================================================
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const AuthModule = {
+  currentUser: null,
+  _initialized: false,
+
+  init() {
+    this.checkSession();
+  },
+
+  // 全局路由守卫: 启动时校验登录态
+  async checkSession() {
+    try {
+      const resp = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      if (resp.ok) {
+        const user = await resp.json();
+        this.onAuthenticated(user, false);
+        return;
+      }
+    } catch (e) { /* 网络异常, 落回登录页 */ }
+    this.showAuthView();
+  },
+
+  showAuthView() {
+    const el = document.getElementById('authOverlay');
+    if (el) el.style.display = 'flex';
+  },
+  hideAuthView() {
+    const el = document.getElementById('authOverlay');
+    if (el) el.style.display = 'none';
+  },
+
+  onAuthenticated(user, runInit = true) {
+    this.currentUser = user;
+    this.hideAuthView();
+    this.renderUser(user);
+    if (runInit) this._initApp();
+  },
+
+  renderUser(user) {
+    const el = document.getElementById('sidebarUser');
+    if (!el) return;
+    const initial = (user.display_name || user.username || '?').slice(0, 1).toUpperCase();
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg-tertiary);border-radius:12px;border:1px solid var(--border-color);">
+        <div class="user-avatar">${escapeHtml(initial)}</div>
+        <div style="flex:1;min-width:0;">
+          <p style="font-size:13px;font-weight:600;color:var(--text-primary);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(user.display_name || user.username)}</p>
+          <p style="font-size:10px;color:var(--text-muted);margin:0;">@${escapeHtml(user.username)}</p>
+        </div>
+        <button class="btn-secondary" style="font-size:11px;padding:6px 10px;flex-shrink:0;" onclick="AuthModule.logout()">退出</button>
+      </div>`;
+  },
+
+  switchTab(tab) {
+    const loginTab = document.getElementById('authTabLogin');
+    const regTab = document.getElementById('authTabRegister');
+    const loginForm = document.getElementById('loginForm');
+    const regForm = document.getElementById('registerForm');
+    if (tab === 'login') {
+      loginTab.classList.add('active'); regTab.classList.remove('active');
+      loginForm.style.display = 'flex'; regForm.style.display = 'none';
+    } else {
+      regTab.classList.add('active'); loginTab.classList.remove('active');
+      regForm.style.display = 'flex'; loginForm.style.display = 'none';
+    }
+    this._clearErrors();
+  },
+
+  _clearErrors() {
+    const le = document.getElementById('loginError');
+    const re = document.getElementById('registerError');
+    if (le) le.textContent = '';
+    if (re) re.textContent = '';
+  },
+
+  async submitLogin(e) {
+    e.preventDefault();
+    this._clearErrors();
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if (!username || !password) {
+      document.getElementById('loginError').textContent = '请输入用户名和密码';
+      return false;
+    }
+    try {
+      const resp = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ username, password }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        document.getElementById('loginError').textContent = err.detail || '登录失败';
+        return false;
+      }
+      const user = await resp.json();
+      this.onAuthenticated(user);
+    } catch (err) {
+      document.getElementById('loginError').textContent = '网络错误,请重试';
+    }
+    return false;
+  },
+
+  async submitRegister(e) {
+    e.preventDefault();
+    this._clearErrors();
+    const username = document.getElementById('regUsername').value.trim();
+    const displayName = document.getElementById('regDisplayName').value.trim();
+    const pw = document.getElementById('regPassword').value;
+    const pw2 = document.getElementById('regPassword2').value;
+
+    // 表单校验
+    if (!/^[A-Za-z0-9_\-]+$/.test(username)) {
+      document.getElementById('registerError').textContent = '用户名仅允许字母/数字/_/-';
+      return false;
+    }
+    if (username.length < 3 || username.length > 32) {
+      document.getElementById('registerError').textContent = '用户名长度需为 3-32 位';
+      return false;
+    }
+    if (pw.length < 6) {
+      document.getElementById('registerError').textContent = '密码至少 6 位';
+      return false;
+    }
+    if (pw !== pw2) {
+      document.getElementById('registerError').textContent = '两次输入的密码不一致';
+      return false;
+    }
+
+    try {
+      const resp = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ username, password: pw, display_name: displayName }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        document.getElementById('registerError').textContent = err.detail || '注册失败';
+        return false;
+      }
+      const user = await resp.json();
+      // 注册成功: 后端已自动登录(写入 HttpOnly Cookie), 直接进入应用
+      this.onAuthenticated(user);
+    } catch (err) {
+      document.getElementById('registerError').textContent = '网络错误,请重试';
+    }
+    return false;
+  },
+
+  async logout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    } catch (e) { /* 忽略 */ }
+    this.currentUser = null;
+    location.reload();
+  },
+
+  _initApp() {
+    if (this._initialized) return;
+    this._initialized = true;
+    initApp();
+  },
+};
+
+// 登录成功后执行的应用初始化(原 DOMContentLoaded 内容收敛于此)
+function initApp() {
   GenerateModule.init();
   ProductsModule.bindEvents();
   GenerateModule.loadProducts();
@@ -3464,7 +3758,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // V9.0: Queue refresh button
   const queueRefresh = document.getElementById('queueRefresh');
   if (queueRefresh) queueRefresh.addEventListener('click', () => QueueModule.poll());
-});
+}
 </script>
 </body>
 </html>

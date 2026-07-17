@@ -46,4 +46,11 @@ oss2>=2.18.0
 # 环境变量
 python-dotenv>=1.0.0
 
+# V17.0 极简注册登录系统: 密码哈希(bcrypt) + JWT 鉴权
+# ⚠️ 必须锁定 bcrypt==4.0.1: passlib 1.7.4 与 bcrypt>=4.1 存在 __about__ 兼容性问题,
+#    会导致注册/登录时 AttributeError。Render 基础镜像 python:3.10 有对应轮子,可正常安装。
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]==3.3.0
+
 

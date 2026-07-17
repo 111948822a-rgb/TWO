@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import chat, dashboard, history, products, projects
+from app.api.routes import auth, chat, dashboard, history, products, projects
 from app.core.config import settings
 from app.core.database import init_db
 
@@ -51,6 +51,7 @@ print(f"💾 [Startup] DATA_DIR={DATA_DIR.resolve()}  STORAGE_DIR={STORAGE_DIR.r
 
 init_db()
 
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(history.router)
 app.include_router(products.router)

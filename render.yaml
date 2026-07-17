@@ -17,6 +17,10 @@ services:
     envVars:
       - key: DEBUG
         value: "false"
+      # V17.0 极简登录系统: JWT 签名密钥
+      # 由 Render 自动生成并持久化(部署/重启后保持不变), 切勿手动填写明文
+      - key: JWT_SECRET_KEY
+        generateValue: true
       # PORT 由 Render 自动注入,切勿写死;这里仅声明由平台同步
       - key: PORT
         sync: false

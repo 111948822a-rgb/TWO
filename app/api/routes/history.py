@@ -8,13 +8,19 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.routes.auth import get_current_user
 from app.core.database import get_project_detail, list_projects
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/history", tags=["history"])
+# V17.0: 历史记录全员共享(不加用户过滤), 但需登录才能查看
+router = APIRouter(
+    prefix="/api/history",
+    tags=["history"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("")

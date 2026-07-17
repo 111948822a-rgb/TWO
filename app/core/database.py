@@ -70,6 +70,14 @@ def init_db() -> None:
                 created_at      TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS users (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                username        TEXT NOT NULL UNIQUE,
+                hashed_password TEXT NOT NULL,
+                display_name    TEXT NOT NULL,
+                created_at      TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS projects (
                 task_id           TEXT PRIMARY KEY,
                 product_id        TEXT,
@@ -88,6 +96,8 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_projects_created_at
                 ON projects(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_users_username
+                ON users(username);
         """)
 
         try:
@@ -95,7 +105,48 @@ def init_db() -> None:
             logger.info("[DB] 迁移: 已添加 video_engine 列")
         except Exception:
             pass
+
+        # V17.0: 标记视频创建者(全员共享历史, 但记录是谁生成的)
+        try:
+            conn.execute("ALTER TABLE projects ADD COLUMN creator_name TEXT")
+            logger.info("[DB] 迁移: 已添加 creator_name 列")
+        except Exception:
+            pass
     logger.info("[DB] SQLite 初始化完成: %s", _get_db_path())
+
+
+# ---------------------------------------------------------------------------
+# V17.0 用户系统(极简注册登录)
+# ---------------------------------------------------------------------------
+def create_user(username: str, hashed_password: str, display_name: str) -> dict:
+    """新增用户, 返回用户基础信息(dict, 不含密码哈希)。"""
+    ts = datetime.utcnow().isoformat()
+    with _get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO users (username, hashed_password, display_name, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (username, hashed_password, display_name, ts),
+        )
+        uid = cur.lastrowid
+    return {"id": uid, "username": username, "display_name": display_name}
+
+
+def get_user_by_username(username: str) -> Optional[dict]:
+    """按用户名查询用户(含 hashed_password), 不存在返回 None。"""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE username = ?", (username,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: int) -> Optional[dict]:
+    """按主键查询用户(含 hashed_password), 不存在返回 None。"""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    return dict(row) if row else None
 
 def upsert_project(
     project_id: str,
@@ -110,16 +161,22 @@ def upsert_project(
     product_id: Optional[str] = None,
     created_at: Optional[str] = None,
     video_engine: Optional[str] = None,
+    creator_name: Optional[str] = None,
 ) -> None:
-    """插入或更新项目记录(UPSERT)。"""
+    """插入或更新项目记录(UPSERT)。
+
+    creator_name 仅在首次 INSERT 时写入; ON CONFLICT 更新的 SET 子句刻意
+    不包含 creator_name, 以保证后续状态同步(如阶段推进/重试)不会覆盖创建者标记。
+    """
     ts = created_at or datetime.utcnow().isoformat()
     with _get_conn() as conn:
         conn.execute(
             """
             INSERT INTO projects
                 (task_id, product_id, status, progress, language, vibe,
-                 visual_style, scenes_data, final_video_url, video_engine, error_message, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 visual_style, scenes_data, final_video_url, video_engine,
+                 error_message, creator_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(task_id) DO UPDATE SET
                 product_id      = excluded.product_id,
                 status          = excluded.status,
@@ -133,16 +190,24 @@ def upsert_project(
                 error_message   = excluded.error_message
             """,
             (project_id, product_id, status, progress, language, vibe,
-             visual_style, scenes_data, final_video_url, video_engine, error_message, ts),
+             visual_style, scenes_data, final_video_url, video_engine,
+             error_message, creator_name, ts),
         )
-    logger.debug("[DB] 项目已同步: %s (status=%s, progress=%.2f)", project_id, status, progress)
+    logger.debug("[DB] 项目已同步: %s (status=%s, progress=%.2f, creator=%s)",
+                 project_id, status, progress, creator_name)
 
 
 def sync_project_from_model(
     project: Any,
     product_id: Optional[str] = None,
+    creator_name: Optional[str] = None,
 ) -> None:
-    """从 VideoProject 模型同步到数据库(便捷封装)。"""
+    """从 VideoProject 模型同步到数据库(便捷封装)。
+
+    creator_name: 创建任务时由业务路由传入当前登录用户的显示名;
+                  后续同步(阶段推进/重试)不传(None), 因 ON CONFLICT 更新
+                  不会触碰该列, 创建者标记得以保留。
+    """
     try:
         scenes_data = project.model_dump_json() if hasattr(project, "model_dump_json") else json.dumps(project.dict(), ensure_ascii=False, default=str)
         upsert_project(
@@ -157,6 +222,7 @@ def sync_project_from_model(
             error_message=project.error,
             video_engine=getattr(project.output, "video_engine", None),
             product_id=product_id,
+            creator_name=creator_name,
             created_at=project.created_at.isoformat() if hasattr(project.created_at, "isoformat") else str(project.created_at),
         )
     except Exception as exc:
@@ -171,7 +237,8 @@ def list_projects(page: int = 1, size: int = 20) -> dict:
         rows = conn.execute(
             """
             SELECT task_id, product_id, status, progress, language, vibe,
-                   visual_style, final_video_url, video_engine, error_message, created_at
+                   visual_style, final_video_url, video_engine, error_message,
+                   creator_name, created_at
             FROM projects
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?

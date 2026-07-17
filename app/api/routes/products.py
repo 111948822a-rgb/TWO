@@ -13,6 +13,7 @@ from typing import List, Optional
 
 from fastapi import (
     APIRouter,
+    Depends,
     File,
     Form,
     HTTPException,
@@ -21,11 +22,17 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 
+from app.api.routes.auth import get_current_user
 from app.core.database import delete_product, list_products, upsert_product
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/products", tags=["products"])
+# V17.0: 产品库全员共享, 但需登录才能访问
+router = APIRouter(
+    prefix="/api/products",
+    tags=["products"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("")

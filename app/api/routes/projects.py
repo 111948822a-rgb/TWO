@@ -23,10 +23,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.api.routes.auth import get_current_user
 from app.core.config import settings
 from app.core.database import delete_project, get_project_detail, sync_project_from_model
 from app.pipelines.orchestrator import run_pipeline
@@ -43,7 +44,12 @@ from app.utils.oss_client import delete_oss_object, upload_image_to_oss, upload_
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/projects", tags=["projects"])
+# V17.0: 所有业务路由强制登录(未登录拒绝访问), 当前用户通过 get_current_user 注入
+router = APIRouter(
+    prefix="/api/projects",
+    tags=["projects"],
+    dependencies=[Depends(get_current_user)],
+)
 
 # SQLite 状态驱动:任务进度/状态/当前阶段全部持久化到 SQLite(projects 表),
 # 多 Gunicorn worker 通过共享挂载盘上的同一 SQLite 文件读取最新状态,无需 Redis。
@@ -254,8 +260,12 @@ async def create_project(
     product_material: str = Form("other"),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
+    current_user: dict = Depends(get_current_user),
 ):
-    """创建视频生成任务,异步触发 5 阶段流水线,返回 task_id。"""
+    """创建视频生成任务,异步触发 5 阶段流水线,返回 task_id。
+
+    V17.0: 标记 creator_name(当前登录用户的显示名), 便于全员共享历史下追溯创建者。
+    """
     task_id = uuid.uuid4().hex[:12]
 
     white_image_url = (image_url or "").strip()
@@ -302,7 +312,7 @@ async def create_project(
             "product_material": product_material,
         },
     )
-    sync_project_from_model(project)
+    sync_project_from_model(project, creator_name=current_user["display_name"])
     _spawn_task(task_id, _run_safe(project))
 
     logger.info(
@@ -333,8 +343,11 @@ async def create_batch(
     product_material: str = Form("other"),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
+    current_user: dict = Depends(get_current_user),
 ):
     """批量生成:语言×氛围×脚本数 笛卡尔积,一键创建多个任务。
+
+    V17.0: 批量任务同样标记 creator_name(当前登录用户)。
 
     所有任务共享同一组产品图(只上传一次 OSS),同批内串行执行
     (规避阿里云 API 并发限流)。
@@ -446,7 +459,7 @@ async def create_batch(
                         },
                     )
                     batch_projects.append(project)
-                    sync_project_from_model(project)
+                    sync_project_from_model(project, creator_name=current_user["display_name"])
                     combos.append({
                         "task_id": task_id,
                         "language": lang,
@@ -501,6 +514,7 @@ async def import_csv(
     language: str = Form("en"),
     vibe: str = Form("upbeat"),
     enable_voiceover: bool = Form(True),
+    current_user: dict = Depends(get_current_user),
 ):
     """CSV 文本导入:解析表格为每行创建一个任务(默认英语+动感BGM)。
 
@@ -574,7 +588,7 @@ async def import_csv(
             },
         )
         csv_projects.append(project)
-        sync_project_from_model(project)
+        sync_project_from_model(project, creator_name=current_user["display_name"])
         created.append({
             "task_id": task_id,
             "language": language,
@@ -695,8 +709,11 @@ async def generate_script(
     candidates_per_scene: int = Form(1),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
+    current_user: dict = Depends(get_current_user),
 ):
     """V7.0 导演模式阶段①:只生成文案与分镜,返回 task_id + 完整 scenes JSON。
+
+    V17.0: 标记 creator_name(当前登录用户)。
 
     用户在前端分镜编辑器中修改后,调用 /{task_id}/continue-generation 继续。
     同步执行(LLM 调用通常 5-15 秒),完成后直接返回分镜数据。
@@ -748,7 +765,7 @@ async def generate_script(
         },
         config={"candidates_per_scene": max(1, min(3, candidates_per_scene))},
     )
-    sync_project_from_model(project)
+    sync_project_from_model(project, creator_name=current_user["display_name"])
 
     logger.info(
         "[%s] 导演模式阶段①:开始生成文案分镜(候选数=%d)",
@@ -802,8 +819,11 @@ async def clone_video(
     product_material: str = Form("other"),
     reference_video: UploadFile = File(...),
     image_file: List[UploadFile] = File([]),
+    current_user: dict = Depends(get_current_user),
 ):
     """V15.0 拍同款:上传参考视频 + 产品图,自动分析视频分镜并复刻。
+
+    V17.0: 标记 creator_name(当前登录用户)。
 
     流程:参考视频→OSS→Qwen-VL分析→分镜提取→图片生成→视频生成→合成
     """
@@ -891,7 +911,7 @@ async def clone_video(
             "clone_mode": True,
         },
     )
-    sync_project_from_model(project)
+    sync_project_from_model(project, creator_name=current_user["display_name"])
     _spawn_task(task_id, _run_safe(project))
 
     logger.info(
@@ -1381,6 +1401,10 @@ async def get_project(task_id: str):
     if not project:
         raise HTTPException(status_code=404, detail="任务不存在")
 
+    # V17.0: 附带创建者标记(全员共享历史下的来源追溯)
+    detail = get_project_detail(task_id)
+    creator_name = detail.get("creator_name") if detail else None
+
     status = project.status
     video_url = None
     if status == ProjectStatus.COMPLETED and project.output.local_path:
@@ -1418,6 +1442,7 @@ async def get_project(task_id: str):
         "video_engine": project.output.video_engine,
         "error": project.error,
         "technical_traceback": project.technical_traceback,
+        "creator_name": creator_name,
         "director_mode_pro": project.config.candidates_per_scene > 1,
         "candidates_per_scene": project.config.candidates_per_scene,
         "scenes": scenes_info,

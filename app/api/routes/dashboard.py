@@ -9,13 +9,19 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.routes.auth import get_current_user
 from app.core.database import get_dashboard_stats
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+# V17.0: 首页看板需登录
+router = APIRouter(
+    prefix="/api/dashboard",
+    tags=["dashboard"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("/stats")
