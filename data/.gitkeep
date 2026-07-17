@@ -1,0 +1,5 @@
+# 占位文件 (.gitkeep)
+# 本目录对应线上容器路径 /app/data，是 SQLite 数据库 (data.db) 与
+# 所有生成文件 (storage/outputs, storage/uploads, storage/temp ...) 的持久化根。
+# 实际数据由 Render 磁盘挂载 + app/main.py 启动时自动创建，不随代码提交。
+# 此文件仅为在仓库中保留目录结构，便于查看；请勿把真实数据放进来。

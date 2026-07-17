@@ -20,7 +20,7 @@ uploads/
 .idea/
 
 # Docker / 部署产物
-data/
+data/*
 # 保留目录结构占位(运行时持久化数据盘,实际数据不入库)
 !data/.gitkeep
 *.db
