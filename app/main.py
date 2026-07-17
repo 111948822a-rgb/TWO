@@ -40,7 +40,7 @@ app = FastAPI(title="AI 带货视频生成系统", version="10.0.0")
 
 # ===== 锁死持久化基础目录(必须位于 Render Disk,部署后不丢失) =====
 DATA_DIR = Path(settings.DATA_ROOT)        # /app/data
-STORAGE_DIR = Path(settings.STORAGE_ROOT)  # /app/storage
+STORAGE_DIR = Path(settings.STORAGE_ROOT)  # /app/data/storage (与数据库同处单块磁盘)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 for subdir in ("outputs", "uploads", "temp", "audios", "images", "videos", "assets", "assets/bgm"):

@@ -35,9 +35,11 @@ class Settings(BaseSettings):
     CELERY_EAGER: bool = True
 
     # --- 存储根目录(锁定 Render Disk 持久化路径) ---
-    # ⚠️ 必须锁死绝对路径 /app/storage,否则生成的视频/图片每次部署丢失
+    # ⚠️ Render 仅支持单块磁盘,挂载于 /app/data。
+    #    数据库与所有生成文件必须都位于其下,故存储根设为 /app/data/storage,
+    #    否则视频/图片每次部署仍会被清空。
     DATA_ROOT: str = "/app/data"
-    STORAGE_ROOT: str = "/app/storage"
+    STORAGE_ROOT: str = "/app/data/storage"
 
     # --- DeepSeek(LLM) ---
     DEEPSEEK_API_KEY: str = ""
@@ -84,12 +86,12 @@ settings = Settings()
 # 🔒 持久化路径强制锁死(Render Disk 防丢失核心防线)
 # ----------------------------------------------------------------------------
 # 即便环境变量误配了相对路径(如旧值 "storage" / "./data/data.db"),
-# 此处也会无条件覆盖为绝对路径 /app/data 与 /app/storage,
+# 此处也会无条件覆盖为绝对路径 /app/data(数据库)与 /app/data/storage(生成文件),
 # 否则每次部署 /app 代码区被重建会导致数据库与所有视频/图片历史清空。
 # ⚠️ 绝对禁止改回相对路径;本地开发如需变更请直接改下方常量。
 # ============================================================================
 _PERSISTENT_DATA_DIR = "/app/data"
-_PERSISTENT_STORAGE_DIR = "/app/storage"
+_PERSISTENT_STORAGE_DIR = "/app/data/storage"
 settings.DATA_ROOT = _PERSISTENT_DATA_DIR
 settings.STORAGE_ROOT = _PERSISTENT_STORAGE_DIR
 settings.DATABASE_URL = f"sqlite:///{_PERSISTENT_DATA_DIR}/data.db"
