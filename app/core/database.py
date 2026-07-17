@@ -283,3 +283,49 @@ def delete_project(task_id: str) -> bool:
     if deleted:
         logger.info("[DB] 项目已删除: %s", task_id)
     return deleted
+
+
+# ---------------------------------------------------------------------------
+# V16.0 Dashboard 统计
+# ---------------------------------------------------------------------------
+# 视为「正在处理中」的任务状态集合:
+#   排队(pending) + 各生成阶段,不含 awaiting_selection(等待用户选择)/completed/failed
+_ACTIVE_STATUSES = (
+    "pending", "scripting", "img_gen", "vid_gen", "audio_gen", "compositing",
+)
+
+
+def get_dashboard_stats() -> dict:
+    """V16.0: 返回首页看板聚合统计(只读查询,不触碰生成流水线)。
+
+    说明:
+        - total_videos / today_videos 以 final_video_url 非空作为「成功产出」判定。
+        - running_tasks 统计仍处于活跃生成阶段的任务(pending 起至 compositing)。
+        - 系统未做鉴权,此处为全局统计;接入 user_id 后需追加 WHERE 隔离条件。
+    """
+    with _get_conn() as conn:
+        total_products = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+
+        total_videos = conn.execute(
+            "SELECT COUNT(*) FROM projects "
+            "WHERE final_video_url IS NOT NULL AND final_video_url != ''"
+        ).fetchone()[0]
+
+        today_videos = conn.execute(
+            "SELECT COUNT(*) FROM projects "
+            "WHERE final_video_url IS NOT NULL AND final_video_url != '' "
+            "AND substr(created_at, 1, 10) = date('now')"
+        ).fetchone()[0]
+
+        placeholders = ",".join("?" * len(_ACTIVE_STATUSES))
+        running_tasks = conn.execute(
+            f"SELECT COUNT(*) FROM projects WHERE status IN ({placeholders})",
+            _ACTIVE_STATUSES,
+        ).fetchone()[0]
+
+    return {
+        "total_products": total_products,
+        "total_videos": total_videos,
+        "today_videos": today_videos,
+        "running_tasks": running_tasks,
+    }

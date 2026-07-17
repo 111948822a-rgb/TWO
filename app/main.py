@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import chat, history, products, projects
+from app.api.routes import chat, dashboard, history, products, projects
 from app.core.config import settings
 from app.core.database import init_db
 
@@ -50,6 +50,7 @@ app.include_router(projects.router)
 app.include_router(history.router)
 app.include_router(products.router)
 app.include_router(chat.router)
+app.include_router(dashboard.router)
 
 frontend_dir = Path(__file__).parent.parent / "frontend"
 frontend_dir.mkdir(parents=True, exist_ok=True)

@@ -267,6 +267,50 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ===== V16.0 Dashboard ===== */
+    .dash-card {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .dash-card:hover {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 1px var(--accent-color), var(--shadow);
+    }
+    .quick-action {
+      cursor: pointer;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .quick-action:hover {
+      transform: scale(1.05);
+      border-color: var(--accent-color);
+      box-shadow: 0 0 28px -6px var(--accent-color);
+    }
+    .recent-card {
+      cursor: pointer;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .recent-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent-color);
+    }
+    .skeleton {
+      background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 50%, var(--bg-tertiary) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.2s infinite;
+      border-radius: 8px;
+      color: transparent !important;
+    }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
     /* Fade in */
     .fade-in { animation: fadeIn 0.3s ease; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -403,7 +447,11 @@
     </div>
 
     <nav class="sidebar-nav">
-      <button class="nav-item active" data-view="studio">
+      <button class="nav-item active" data-view="dashboard">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        <span>🏠 首页 (Dashboard)</span>
+      </button>
+      <button class="nav-item" data-view="studio">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
         <span data-i18n="nav_studio">创作工作台</span>
       </button>
@@ -453,6 +501,90 @@
        MAIN CONTENT
        =================================================================== -->
   <main class="main-content">
+
+    <!-- ================================================================
+         VIEW 0: DASHBOARD (V16.0 首页)
+         ================================================================ -->
+    <div id="view-dashboard" class="view active" style="padding:32px;max-width:1280px;margin:0 auto;">
+      <!-- Header -->
+      <div style="margin-bottom:28px;">
+        <h1 style="font-size:28px;font-weight:700;color:var(--text-primary);margin:0;letter-spacing:-0.5px;">首页 Dashboard</h1>
+        <p style="font-size:14px;color:var(--text-secondary);margin:8px 0 0;">欢迎回来，这里是你的带货视频作战中心 👋 一键掌握全局产出与火力。</p>
+      </div>
+
+      <!-- 1. 核心数据看板 -->
+      <div class="grid grid-cols-4 gap-6 mb-8">
+        <div class="dash-card" style="padding:24px;border-radius:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span style="font-size:22px;">📦</span>
+            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);">产品储备</span>
+          </div>
+          <div id="stat-total-products" style="font-size:38px;font-weight:800;line-height:1;color:var(--text-primary);">--</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">已录入产品素材</div>
+        </div>
+        <div class="dash-card" style="padding:24px;border-radius:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span style="font-size:22px;">🎬</span>
+            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);">累计产出</span>
+          </div>
+          <div id="stat-total-videos" style="font-size:38px;font-weight:800;line-height:1;color:var(--text-primary);">--</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">成功视频总数</div>
+        </div>
+        <div class="dash-card" style="padding:24px;border-radius:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span style="font-size:22px;">🔥</span>
+            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);">今日火力</span>
+          </div>
+          <div id="stat-today-videos" style="font-size:38px;font-weight:800;line-height:1;color:var(--text-primary);">--</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">今日新增视频</div>
+        </div>
+        <div class="dash-card" style="padding:24px;border-radius:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span style="font-size:22px;">⚙️</span>
+            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);">正在渲染</span>
+          </div>
+          <div id="stat-running-tasks" style="font-size:38px;font-weight:800;line-height:1;color:var(--text-primary);">--</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">进行中的任务</div>
+        </div>
+      </div>
+
+      <!-- 2. 快捷行动区 -->
+      <div style="margin-bottom:32px;">
+        <h2 style="font-size:16px;font-weight:700;color:var(--text-primary);margin:0 0 16px;">快捷行动</h2>
+        <div class="grid grid-cols-3 gap-6">
+          <div class="quick-action" onclick="switchView('studio')" style="padding:24px;border-radius:16px;">
+            <div style="font-size:34px;margin-bottom:12px;">🎬</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">新建爆款</div>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">从产品库或空白开始，AI 帮你生成带货脚本与分镜。</div>
+          </div>
+          <div class="quick-action" onclick="switchView('agent')" style="padding:24px;border-radius:16px;">
+            <div style="font-size:34px;margin-bottom:12px;">🤖</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">AI 导演</div>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">用对话方式描述需求，导演模式自动拆解候选。</div>
+          </div>
+          <div class="quick-action" onclick="switchView('clone')" style="padding:24px;border-radius:16px;">
+            <div style="font-size:34px;margin-bottom:12px;">📹</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">拍同款</div>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">上传一条爆款视频，1:1 复刻它的分镜结构。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 最新产出橱窗 -->
+      <div style="margin-bottom:32px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h2 style="font-size:16px;font-weight:700;color:var(--text-primary);margin:0;">最新产出橱窗</h2>
+          <button class="btn-secondary" style="font-size:12px;" onclick="switchView('history')">查看全部 →</button>
+        </div>
+        <div id="dashRecent" class="grid grid-cols-4 gap-6"></div>
+      </div>
+
+      <!-- 4. 灵感横幅 -->
+      <div style="border-radius:24px;padding:32px;background:var(--accent-gradient);position:relative;overflow:hidden;">
+        <div style="position:absolute;top:-40px;right:-20px;font-size:140px;opacity:0.15;pointer-events:none;">💡</div>
+        <p id="dashTip" style="font-size:18px;font-weight:600;color:#fff;margin:0;line-height:1.6;max-width:90%;">💡 提示：尝试用「玻璃材质」搭配「电影级光影」，让产品质感提升 200%！</p>
+      </div>
+    </div>
 
     <!-- ================================================================
          VIEW 0: CLONE (拍同款)
@@ -558,7 +690,7 @@
     <!-- ================================================================
          VIEW 1: STUDIO (创作工作台)
          ================================================================ -->
-    <div id="view-studio" class="view active" style="padding:24px;">
+    <div id="view-studio" class="view" style="padding:24px;">
       <div style="display:flex;gap:24px;max-width:1400px;align-items:flex-start;">
         <!-- ========== 左侧 40% 配置区 ========== -->
         <div style="flex:0 0 42%;max-width:600px;">
@@ -1215,6 +1347,7 @@ function switchView(viewName) {
   if (viewName === 'agent') AgentModule.onShow();
   if (viewName === 'studio') { GenerateModule.updateSpecPreview(); GenerateModule.loadCloneList(); }
   if (viewName === 'clone') CloneModule.init();
+  if (viewName === 'dashboard') DashboardModule.load();
 }
 
 function showToast(msg, duration = 3000) {
@@ -3177,6 +3310,125 @@ async function handleRetryComposite(taskId, btn) {
 }
 
 // ======================================================================
+// V16.0 Dashboard Module
+// ======================================================================
+const DashboardModule = {
+  _tips: [
+    "💡 提示：尝试用「玻璃材质」搭配「电影级光影」，让产品质感提升 200%！",
+    "💡 爆款公式：痛点钩子(3秒) + 产品特写(5秒) + 使用场景(15秒) + 行动号召(7秒)。",
+    "💡 提示：竖屏 9:16 在 TikTok 完播率更高，搭配「🔥动感」BGM 更易引爆。",
+    "💡 试试「拍同款」：上传一条爆款视频，AI 帮你 1:1 复刻分镜结构。",
+    "💡 提示：多语言(英/泰/印尼)一键生成，轻松铺量出海。"
+  ],
+
+  load() {
+    this.loadStats();
+    this.loadRecent();
+    this.renderTip();
+  },
+
+  _setSkeleton(id, on) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (on) {
+      el.classList.add('skeleton');
+      el.style.minWidth = '64px';
+      el.style.height = '38px';
+      el.dataset._txt = el.textContent;
+      el.textContent = '';
+    } else {
+      el.classList.remove('skeleton');
+      el.style.minWidth = '';
+      el.style.height = '';
+    }
+  },
+
+  async loadStats() {
+    const ids = ['stat-total-products', 'stat-total-videos', 'stat-today-videos', 'stat-running-tasks'];
+    ids.forEach(i => this._setSkeleton(i, true));
+    try {
+      const resp = await fetch('/api/dashboard/stats');
+      const d = await resp.json();
+      document.getElementById('stat-total-products').textContent = d.total_products ?? 0;
+      document.getElementById('stat-total-videos').textContent = d.total_videos ?? 0;
+      document.getElementById('stat-today-videos').textContent = d.today_videos ?? 0;
+      document.getElementById('stat-running-tasks').textContent = d.running_tasks ?? 0;
+    } catch (e) {
+      console.error('[Dashboard] stats load failed', e);
+      ids.forEach(i => { const el = document.getElementById(i); if (el) el.textContent = '—'; });
+    } finally {
+      ids.forEach(i => this._setSkeleton(i, false));
+    }
+  },
+
+  async loadRecent() {
+    const grid = document.getElementById('dashRecent');
+    if (!grid) return;
+    grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);"><span class="spinner"></span> 加载中...</div>`;
+    try {
+      const resp = await fetch('/api/history?page=1&size=8');
+      const data = await resp.json();
+      const items = (data.items || []).filter(i => i.final_video_url).slice(0, 4);
+      if (items.length === 0) {
+        grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);">还没有成功产出的视频，去工作台生成第一个爆款吧 🚀</div>`;
+        return;
+      }
+      grid.innerHTML = '';
+      items.forEach(it => grid.appendChild(this._recentCard(it)));
+    } catch (e) {
+      grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);">加载失败，请刷新重试</div>`;
+    }
+  },
+
+  _recentCard(it) {
+    const langLabel = (I18nModule.t('lang_labels')[it.language] || it.language || '');
+    const vibeLabel = (I18nModule.t('vibe_labels')[it.vibe] || it.vibe || '');
+    const card = document.createElement('div');
+    card.className = 'recent-card';
+    card.style.cssText = 'transition:transform .2s,border-color .2s;';
+    card.onclick = () => switchView('history');
+    card.innerHTML = `
+      <div style="position:relative;height:180px;background:#000;overflow:hidden;">
+        <video src="${it.final_video_url}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>
+        <div style="position:absolute;top:8px;left:8px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(0,0,0,0.6);color:#fff;">${langLabel}</span></div>
+        <div style="position:absolute;bottom:8px;right:8px;"><span style="font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(0,0,0,0.6);color:#fff;">${vibeLabel}</span></div>
+        <div data-fallback style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:34px;background:#000;"></div>
+      </div>
+      <div style="padding:10px 12px;">
+        <p style="font-size:12px;color:var(--text-secondary);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this._fmtTime(it.created_at)}</p>
+      </div>`;
+    const vid = card.querySelector('video');
+    if (vid) vid.addEventListener('error', () => {
+      const fb = card.querySelector('[data-fallback]');
+      if (fb) fb.style.display = 'flex';
+      vid.style.display = 'none';
+    });
+    return card;
+  },
+
+  _fmtTime(iso) {
+    try {
+      const d = new Date(iso);
+      const now = new Date();
+      const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      if (sameDay) return `今天 ${hh}:${mm}`;
+      const MM = String(d.getMonth() + 1).padStart(2, '0');
+      const DD = String(d.getDate()).padStart(2, '0');
+      return `${MM}-${DD} ${hh}:${mm}`;
+    } catch (e) { return ''; }
+  },
+
+  renderTip() {
+    const el = document.getElementById('dashTip');
+    if (!el) return;
+    const idx = new Date().getDate() % this._tips.length;
+    el.textContent = this._tips[idx];
+  }
+};
+
+// ======================================================================
 // Init
 // ======================================================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -3186,6 +3438,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ProductsModule.bindEvents();
   GenerateModule.loadProducts();
   AgentModule.init();
+  DashboardModule.load();
 
   // V11.0 AI 导演引导卡片点击
   const guideCard = document.getElementById('agentGuideCard');
