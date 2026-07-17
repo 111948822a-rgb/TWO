@@ -38,11 +38,16 @@ print(
 
 app = FastAPI(title="AI 带货视频生成系统", version="10.0.0")
 
-Path(settings.DATA_ROOT).mkdir(parents=True, exist_ok=True)
-storage = Path(settings.STORAGE_ROOT)
-storage.mkdir(parents=True, exist_ok=True)
-for subdir in ("outputs", "uploads", "temp", "audios", "assets", "assets/bgm"):
-    (storage / subdir).mkdir(parents=True, exist_ok=True)
+# ===== 锁死持久化基础目录(必须位于 Render Disk,部署后不丢失) =====
+DATA_DIR = Path(settings.DATA_ROOT)        # /app/data
+STORAGE_DIR = Path(settings.STORAGE_ROOT)  # /app/storage
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+for subdir in ("outputs", "uploads", "temp", "audios", "images", "videos", "assets", "assets/bgm"):
+    (STORAGE_DIR / subdir).mkdir(parents=True, exist_ok=True)
+
+# 诊断:确认实际持久化落点(部署后必须位于 /app 下,否则历史仍会丢失)
+print(f"💾 [Startup] DATA_DIR={DATA_DIR.resolve()}  STORAGE_DIR={STORAGE_DIR.resolve()}", flush=True)
 
 init_db()
 
@@ -55,6 +60,9 @@ app.include_router(dashboard.router)
 frontend_dir = Path(__file__).parent.parent / "frontend"
 frontend_dir.mkdir(parents=True, exist_ok=True)
 
-app.mount("/outputs", StaticFiles(directory=str(storage / "outputs")), name="outputs")
-app.mount("/uploads", StaticFiles(directory=str(storage / "uploads")), name="uploads")
+# 本地静态文件服务:视频/图片/音频均经本地磁盘访问(无 OSS 依赖)
+# /storage 暴露整个持久化根目录;/outputs、/uploads 保留原有访问前缀
+app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
+app.mount("/outputs", StaticFiles(directory=str(STORAGE_DIR / "outputs")), name="outputs")
+app.mount("/uploads", StaticFiles(directory=str(STORAGE_DIR / "uploads")), name="uploads")
 app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")

@@ -24,8 +24,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "ai-video-commerce"
     DEBUG: bool = True
 
-    # --- 数据库(SQLite,开发期) ---
-    DATABASE_URL: str = "sqlite:///./data/data.db"
+    # --- 数据库(SQLite,锁定 Render Disk 持久化路径) ---
+    # ⚠️ 必须锁死绝对路径 /app/data,否则每次部署 /app 代码区被重建会清空历史
+    DATABASE_URL: str = "sqlite:////app/data/data.db"
 
     # --- Redis / Celery ---
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -33,9 +34,10 @@ class Settings(BaseSettings):
     # 生产环境置为 False 并启动 celery worker
     CELERY_EAGER: bool = True
 
-    # --- 存储根目录 ---
-    DATA_ROOT: str = "data"
-    STORAGE_ROOT: str = "storage"
+    # --- 存储根目录(锁定 Render Disk 持久化路径) ---
+    # ⚠️ 必须锁死绝对路径 /app/storage,否则生成的视频/图片每次部署丢失
+    DATA_ROOT: str = "/app/data"
+    STORAGE_ROOT: str = "/app/storage"
 
     # --- DeepSeek(LLM) ---
     DEEPSEEK_API_KEY: str = ""
@@ -77,3 +79,17 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# ============================================================================
+# 🔒 持久化路径强制锁死(Render Disk 防丢失核心防线)
+# ----------------------------------------------------------------------------
+# 即便环境变量误配了相对路径(如旧值 "storage" / "./data/data.db"),
+# 此处也会无条件覆盖为绝对路径 /app/data 与 /app/storage,
+# 否则每次部署 /app 代码区被重建会导致数据库与所有视频/图片历史清空。
+# ⚠️ 绝对禁止改回相对路径;本地开发如需变更请直接改下方常量。
+# ============================================================================
+_PERSISTENT_DATA_DIR = "/app/data"
+_PERSISTENT_STORAGE_DIR = "/app/storage"
+settings.DATA_ROOT = _PERSISTENT_DATA_DIR
+settings.STORAGE_ROOT = _PERSISTENT_STORAGE_DIR
+settings.DATABASE_URL = f"sqlite:///{_PERSISTENT_DATA_DIR}/data.db"
