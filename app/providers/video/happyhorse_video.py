@@ -17,15 +17,23 @@ V14.2 重要修复:基于官方文档 https://help.aliyun.com/zh/model-studio/ha
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import mimetypes
+from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
 from app.core.config import settings
 from app.providers.video.base import IVideoProvider, VideoResult
+from app.utils.oss_client import is_oss_configured, upload_image_to_oss
 from app.utils.prompt_templates import VIDEO_QUALITY_SUFFIX, truncate_prompt_safe
 
 logger = logging.getLogger(__name__)
+
+# loopback / 内网地址:阿里云服务器无法下载,必须中转
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
 
 # 百炼视频生成端点(与通义万相共用)
 CREATE_URL = (
@@ -36,6 +44,108 @@ TASK_URL_TEMPLATE = "https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
 
 POLL_INTERVAL = 5.0
 POLL_MAX_ATTEMPTS = 120  # 10 分钟超时
+
+
+# ---------------------------------------------------------------------------
+# 关键帧图片中转:确保传给 HappyHorse 的 URL 阿里云服务器绝对可访问
+# ---------------------------------------------------------------------------
+
+def _is_public_http_url(value: str) -> bool:
+    """判断是否为公网可访问的 http(s) URL(排除 loopback/内网)。"""
+    low = value.lower()
+    if not (low.startswith("http://") or low.startswith("https://")):
+        return False
+    host = (urlparse(value).hostname or "").lower()
+    return host not in _LOOPBACK_HOSTS
+
+
+def _read_local_file_as_bytes(raw: str) -> tuple[bytes, str]:
+    """读取本地图片文件为字节流(支持 file:// 与绝对路径)。"""
+    path = raw
+    if path.startswith("file://"):
+        path = path[len("file://"):]
+    # Windows 盘符 file:///C:/... 处理
+    if path.startswith("/") and len(path) > 2 and path[2] == ":":
+        path = path[1:]
+    p = Path(path)
+    if not p.exists():
+        raise RuntimeError(f"关键帧图片本地文件不存在: {raw}")
+    return p.read_bytes(), p.name or "keyframe.png"
+
+
+def _decode_data_uri(raw: str) -> tuple[bytes, str]:
+    """解析 data:image/png;base64,xxxx 为字节流 + 文件名。"""
+    try:
+        header, b64 = raw.split(",", 1)
+        ext = ".png"
+        if "jpeg" in header or "jpg" in header:
+            ext = ".jpg"
+        elif "webp" in header:
+            ext = ".webp"
+        elif "gif" in header:
+            ext = ".gif"
+        data = base64.b64decode(b64)
+        return data, f"keyframe{ext}"
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"关键帧图片 data URI 解析失败: {exc}") from exc
+
+
+async def _upload_to_oss_or_base64(data: bytes, fname: str) -> str:
+    """方案A(优先):上传 OSS 拿公网 URL;方案B(OSS 未配置):降级 Base64 data URI。"""
+    if is_oss_configured():
+        try:
+            public_url = await asyncio.to_thread(
+                upload_image_to_oss, data, fname
+            )
+            logger.info(
+                "[HappyHorse] 关键帧图片已中转上传 OSS -> %s", public_url
+            )
+            return public_url
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"关键帧图片上传 OSS 失败(中转环节): {exc}"
+            ) from exc
+    # 方案B 兜底: 无 OSS -> Base64 data URI(仅当百炼 HappyHorse 支持时有效)
+    logger.warning(
+        "[HappyHorse] OSS 未配置, 退化为 base64 data URI 传图"
+        "(若百炼不支持将失败, 强烈建议配置 OSS)"
+    )
+    mime = mimetypes.guess_type(fname)[0] or "image/png"
+    b64 = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+async def ensure_public_image_url(raw_url: str) -> str:
+    """将任意来源的关键帧图片 URL 转换为 HappyHorse 绝对可访问的公网 URL。
+
+    紧急修复(V17.1):弃用 OSS 作为最终存储后,场景图可能落在本
+    地 Disk(/app/storage/...)或以 data: URI 形式存在。阿里云百炼
+    HappyHorse 服务器无法下载这些图片,导致视频全军覆没。
+
+    处理策略:
+      - 已为公网 http(s) URL(非 loopback) -> 直接复用(不重复上传)
+      - data: URI -> 解码为字节 -> 上传 OSS(方案A) / 退化为 base64(方案B)
+      - 本地路径 / loopback -> 读取字节 -> 上传 OSS(方案A) / 退化为 base64(方案B)
+    """
+    if not raw_url or not raw_url.strip():
+        raise RuntimeError("关键帧图片 URL 为空,无法生成视频")
+    raw_url = raw_url.strip()
+
+    # data URI: 解码后中转
+    if raw_url.startswith("data:"):
+        data, fname = _decode_data_uri(raw_url)
+        return await _upload_to_oss_or_base64(data, fname)
+
+    # 已是公网可访问 URL -> 透传
+    if _is_public_http_url(raw_url):
+        logger.info(
+            "[HappyHorse] 关键帧图片已是公网 URL, 直接复用: %s", raw_url
+        )
+        return raw_url
+
+    # 本地文件 / loopback -> 读取字节中转
+    data, fname = _read_local_file_as_bytes(raw_url)
+    return await _upload_to_oss_or_base64(data, fname)
 
 
 class HappyHorseVideoProvider(IVideoProvider):
@@ -88,8 +198,18 @@ class HappyHorseVideoProvider(IVideoProvider):
             keyframe_image_url,
             final_prompt[:80],
         )
+
+        # 紧急修复(V17.1): 将本地路径/loopback/data URI 中转为公网 URL,
+        # 否则阿里云服务器无法下载关键帧图片, 视频生成必然全军覆没。
+        public_image_url = await ensure_public_image_url(keyframe_image_url)
+        if public_image_url != keyframe_image_url:
+            logger.info(
+                "[%s] 关键帧图片已中转为公网 URL(原=%s)",
+                self.PROVIDER_NAME, keyframe_image_url[:80],
+            )
+
         task_id = await self._submit_task(
-            keyframe_image_url, final_prompt, duration
+            public_image_url, final_prompt, duration
         )
         logger.info("[HappyHorse] task_id=%s,开始轮询", task_id)
         video_url = await self._poll_task(task_id)

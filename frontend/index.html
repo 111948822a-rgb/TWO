@@ -2456,6 +2456,10 @@ const HistoryModule = {
           onclick="event.stopPropagation();handleRetryComposite('${item.task_id}', this)">
           ${this.t('retry_composite')}
         </button>` : '';
+      // V17.1: 历史卡片内联展示失败原因(不再只显示干瘪的'失败')
+      const historyErrorHtml = (item.status === 'failed' && item.error_message)
+        ? `<div style="margin-top:10px;padding:8px 10px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.3);"><p style="font-size:11px;color:var(--danger-color);margin:0;word-break:break-word;white-space:pre-wrap;">⚠️ ${escapeHtml((item.error_message || '').slice(0, 400))}</p></div>`
+        : '';
       const card = document.createElement('div');
       card.className = 'card fade-in';
       card.style.cssText = 'padding:12px;cursor:pointer;position:relative;';
@@ -2477,6 +2481,7 @@ const HistoryModule = {
             ${retryBtnHtml}
             <button class="btn-secondary" style="flex:1;padding:6px;font-size:11px;" onclick="event.stopPropagation();HistoryModule.openDrawer('${item.task_id}')">👁️</button>
           </div>
+          ${historyErrorHtml}
         </div>`;
       card.onclick = () => this.openDrawer(item.task_id);
       grid.appendChild(card);

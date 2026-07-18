@@ -281,6 +281,12 @@ async def stage_video_gen(project: VideoProject) -> None:
             "[%s] 阶段③ %d 个分镜失败(跳过),%d 个成功: %s",
             project.project_id, len(failed), len(succeeded), details,
         )
+    # V17.1: 全部失败 -> 提前抛出详细死因, 让 project.error 携带真实原因
+    # (图片URL无法访问 / 下载失败 等), 而非后续阶段报笼统的'无有效片段'。
+    if not succeeded:
+        raise RuntimeError(
+            f"全部 {len(project.scenes)} 个分镜视频均生成失败: {details}"
+        )
     logger.info(
         "[%s] 阶段③ 完成(成功 %d/%d)",
         project.project_id, len(succeeded), len(project.scenes),
