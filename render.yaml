@@ -24,10 +24,10 @@ services:
       # PORT 由 Render 自动注入,切勿写死;这里仅声明由平台同步
       - key: PORT
         sync: false
-    # 持久化磁盘(单块):Render 每服务仅支持一块磁盘,挂载于 /app/data。
-    # 数据库(/app/data/data.db)与所有生成文件(/app/data/storage/*)统一位于其下。
-    # ⚠️ 务必在 Render 控制台确认该磁盘 Mount Path = /app/data(不能挂 /app 整盘)。
+    # 持久化磁盘(单块):Render 每服务仅支持一块磁盘,挂载于 /data。
+    # 数据库(/data/db/data.db)与所有生成文件(/data/storage/*)统一位于其下。
+    # ⚠️ 务必在 Render 控制台确认该磁盘 Mount Path = /data(不能挂 /app 整盘)。
     disks:
       - name: data
-        mountPath: /app/data
+        mountPath: /data
         sizeGB: 10

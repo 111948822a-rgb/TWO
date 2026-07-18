@@ -31,12 +31,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import traceback
+from datetime import datetime
 from typing import Awaitable, Callable, List, Optional
 
 from app.schemas.project import (
     ProjectStatus,
     Scene,
     SceneStatus,
+    StageLog,
     VideoProject,
 )
 from app.services.audio_generator import AudioGenerator
@@ -535,16 +537,35 @@ async def run_pipeline(
         until.value if until else "无(跑完)",
     )
 
+    # V17.3: 执行时间打点 —— 仅在首次启动记录开始时间(导演模式续跑不覆盖)
+    if not project.started_at:
+        project.started_at = datetime.utcnow()
+    project.logs.append(StageLog(
+        ts=datetime.utcnow().isoformat(),
+        stage="pending",
+        message="🚀 任务开始执行",
+    ))
+
     try:
         for i, stage in enumerate(flow):
             logger.info(
                 "[Task %s] 🚀 开始阶段: %s (%d/%d)",
                 task_id, stage.value, i + 1, total,
             )
+            project.logs.append(StageLog(
+                ts=datetime.utcnow().isoformat(),
+                stage=stage.value,
+                message=f"开始阶段：{STAGE_LABELS.get(stage, stage.value)}",
+            ))
             handler = STAGE_HANDLERS[stage]
             await handler(project)
             project.progress = round((i + 1) / total, 2)
             project.touch()
+            project.logs.append(StageLog(
+                ts=datetime.utcnow().isoformat(),
+                stage=stage.value,
+                message=f"完成阶段：{STAGE_LABELS.get(stage, stage.value)}",
+            ))
             _sync_db(project)  # V8.0: 每阶段完成同步 SQLite
             logger.info(
                 "[Task %s] ✅ 完成阶段: %s (progress=%.0f%%)",
@@ -573,12 +594,24 @@ async def run_pipeline(
         # 普通模式:全部阶段跑完 → COMPLETED
         project.status = ProjectStatus.COMPLETED
         project.progress = 1.0
+        project.completed_at = datetime.utcnow()
+        project.logs.append(StageLog(
+            ts=project.completed_at.isoformat(),
+            stage="completed",
+            message="🎉 任务全部完成",
+        ))
         _sync_db(project)
         logger.info("[Task %s] 🎉 Pipeline 全部完成!", task_id)
     except Exception as exc:  # noqa: BLE001
         project.status = ProjectStatus.FAILED
+        project.completed_at = datetime.utcnow()
         project.error = f"{type(exc).__name__}: {exc}"
         project.technical_traceback = traceback.format_exc()
+        project.logs.append(StageLog(
+            ts=project.completed_at.isoformat(),
+            stage="failed",
+            message=f"❌ 任务失败：{type(exc).__name__}: {exc}",
+        ))
         _sync_db(project)
         logger.exception(
             "[Task %s] ❌ Pipeline 失败: %s", task_id, exc

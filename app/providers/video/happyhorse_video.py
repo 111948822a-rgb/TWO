@@ -119,7 +119,7 @@ async def ensure_public_image_url(raw_url: str) -> str:
     """将任意来源的关键帧图片 URL 转换为 HappyHorse 绝对可访问的公网 URL。
 
     紧急修复(V17.1):弃用 OSS 作为最终存储后,场景图可能落在本
-    地 Disk(/app/storage/...)或以 data: URI 形式存在。阿里云百炼
+    地 Disk(/data/storage/...)或以 data: URI 形式存在。阿里云百炼
     HappyHorse 服务器无法下载这些图片,导致视频全军覆没。
 
     处理策略:

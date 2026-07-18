@@ -237,6 +237,14 @@ class FinalOutput(BaseModel):
     video_engine: Optional[str] = None
 
 
+class StageLog(BaseModel):
+    """V17.3: 单条执行日志(用于前端"查看执行日志"折叠面板)。"""
+
+    ts: str = Field(..., description="ISO 时间戳")
+    stage: str = Field(..., description="阶段标识(pending/scripting/img_gen/.../completed/failed)")
+    message: str = Field("", description="可读的执行说明")
+
+
 class VideoProject(BaseModel):
     """贯穿 Pipeline 的核心数据契约。
 
@@ -249,6 +257,9 @@ class VideoProject(BaseModel):
     progress: float = Field(0.0, ge=0.0, le=1.0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    # V17.3: 执行时间打点(供前端耗时 / ETA 估算)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
     input: ProductInput
     config: ProjectConfig = Field(default_factory=ProjectConfig)
@@ -258,6 +269,8 @@ class VideoProject(BaseModel):
     error: Optional[str] = None
     # 完整 Python 堆栈(防抓瞎:前端折叠展示,便于排查深层错误)
     technical_traceback: Optional[str] = None
+    # V17.3: 执行日志流(各阶段开始/完成/失败记录,前端折叠展示)
+    logs: List[StageLog] = Field(default_factory=list)
 
     def touch(self) -> None:
         """更新 updated_at 时间戳,在任何状态变更后调用。"""

@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY . /app
 
-RUN mkdir -p /app/data /app/data/storage \
+RUN mkdir -p /data/db /data/storage \
     && sed -i 's/\r$//' /app/start.sh \
     && chmod +x /app/start.sh
 

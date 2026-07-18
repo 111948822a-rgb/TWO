@@ -26,7 +26,7 @@ _DB_PATH: str = ""
 
 
 def _resolve_sqlite_path() -> Path:
-    """解析 SQLite 文件路径,默认持久化到 ./data/data.db。"""
+    """解析 SQLite 文件路径,默认持久化到 /data/db/data.db。"""
     db_url = (settings.DATABASE_URL or "").strip()
     if db_url.startswith("sqlite:///"):
         raw_path = db_url[len("sqlite:///"):]
@@ -112,6 +112,23 @@ def init_db() -> None:
             logger.info("[DB] 迁移: 已添加 creator_name 列")
         except Exception:
             pass
+
+        # V17.3: 执行时间打点(耗时计算 / ETA 估算)
+        try:
+            conn.execute("ALTER TABLE projects ADD COLUMN started_at TEXT")
+            logger.info("[DB] 迁移: 已添加 started_at 列")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE projects ADD COLUMN completed_at TEXT")
+            logger.info("[DB] 迁移: 已添加 completed_at 列")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE projects ADD COLUMN logs TEXT")
+            logger.info("[DB] 迁移: 已添加 logs 列")
+        except Exception:
+            pass
     logger.info("[DB] SQLite 初始化完成: %s", _get_db_path())
 
 
@@ -162,11 +179,16 @@ def upsert_project(
     created_at: Optional[str] = None,
     video_engine: Optional[str] = None,
     creator_name: Optional[str] = None,
+    started_at: Optional[str] = None,
+    completed_at: Optional[str] = None,
+    logs_json: Optional[str] = None,
 ) -> None:
     """插入或更新项目记录(UPSERT)。
 
     creator_name 仅在首次 INSERT 时写入; ON CONFLICT 更新的 SET 子句刻意
     不包含 creator_name, 以保证后续状态同步(如阶段推进/重试)不会覆盖创建者标记。
+
+    started_at / completed_at / logs 随每次同步落盘(幂等),供前端耗时/ETA/日志展示。
     """
     ts = created_at or datetime.utcnow().isoformat()
     with _get_conn() as conn:
@@ -175,8 +197,8 @@ def upsert_project(
             INSERT INTO projects
                 (task_id, product_id, status, progress, language, vibe,
                  visual_style, scenes_data, final_video_url, video_engine,
-                 error_message, creator_name, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 error_message, creator_name, started_at, completed_at, logs, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(task_id) DO UPDATE SET
                 product_id      = excluded.product_id,
                 status          = excluded.status,
@@ -187,11 +209,14 @@ def upsert_project(
                 scenes_data     = excluded.scenes_data,
                 final_video_url = excluded.final_video_url,
                 video_engine    = excluded.video_engine,
-                error_message   = excluded.error_message
+                error_message   = excluded.error_message,
+                started_at      = excluded.started_at,
+                completed_at    = excluded.completed_at,
+                logs            = excluded.logs
             """,
             (project_id, product_id, status, progress, language, vibe,
              visual_style, scenes_data, final_video_url, video_engine,
-             error_message, creator_name, ts),
+             error_message, creator_name, started_at, completed_at, logs_json, ts),
         )
     logger.debug("[DB] 项目已同步: %s (status=%s, progress=%.2f, creator=%s)",
                  project_id, status, progress, creator_name)
@@ -210,6 +235,11 @@ def sync_project_from_model(
     """
     try:
         scenes_data = project.model_dump_json() if hasattr(project, "model_dump_json") else json.dumps(project.dict(), ensure_ascii=False, default=str)
+        logs = getattr(project, "logs", None) or []
+        logs_json = json.dumps(
+            [l.model_dump() if hasattr(l, "model_dump") else l for l in logs],
+            ensure_ascii=False,
+        )
         upsert_project(
             project_id=project.project_id,
             status=project.status.value if hasattr(project.status, "value") else str(project.status),
@@ -223,6 +253,9 @@ def sync_project_from_model(
             video_engine=getattr(project.output, "video_engine", None),
             product_id=product_id,
             creator_name=creator_name,
+            started_at=project.started_at.isoformat() if getattr(project, "started_at", None) else None,
+            completed_at=project.completed_at.isoformat() if getattr(project, "completed_at", None) else None,
+            logs_json=logs_json,
             created_at=project.created_at.isoformat() if hasattr(project.created_at, "isoformat") else str(project.created_at),
         )
     except Exception as exc:
@@ -238,7 +271,7 @@ def list_projects(page: int = 1, size: int = 20) -> dict:
             """
             SELECT task_id, product_id, status, progress, language, vibe,
                    visual_style, final_video_url, video_engine, error_message,
-                   creator_name, created_at
+                   creator_name, started_at, completed_at, created_at
             FROM projects
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?

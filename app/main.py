@@ -38,15 +38,18 @@ print(
 
 app = FastAPI(title="AI 带货视频生成系统", version="10.0.0")
 
-# ===== 锁死持久化基础目录(必须位于 Render Disk,部署后不丢失) =====
-DATA_DIR = Path(settings.DATA_ROOT)        # /app/data
-STORAGE_DIR = Path(settings.STORAGE_ROOT)  # /app/data/storage (与数据库同处单块磁盘)
+# ===== 锁死持久化基础目录(必须位于 Render Disk /data,部署后不丢失) =====
+DATA_DIR = Path(settings.DATA_ROOT)        # /data/db (SQLite)
+STORAGE_DIR = Path(settings.STORAGE_ROOT)  # /data/storage (与数据库同处单块持久化盘)
+# 显式确保挂载点下各目录存在(Render 每部署重建 /app,但 /data 持久化盘需自行建子目录)
+os.makedirs("/data/db", exist_ok=True)
+os.makedirs("/data/storage", exist_ok=True)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 for subdir in ("outputs", "uploads", "temp", "audios", "images", "videos", "assets", "assets/bgm"):
     (STORAGE_DIR / subdir).mkdir(parents=True, exist_ok=True)
 
-# 诊断:确认实际持久化落点(部署后必须位于 /app 下,否则历史仍会丢失)
+# 诊断:确认实际持久化落点(部署后必须位于 /data 下,否则历史仍会丢失)
 print(f"💾 [Startup] DATA_DIR={DATA_DIR.resolve()}  STORAGE_DIR={STORAGE_DIR.resolve()}", flush=True)
 
 init_db()

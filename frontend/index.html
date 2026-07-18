@@ -251,6 +251,40 @@
       transition: width 0.5s ease;
     }
 
+    /* V17.3: 阶段步骤指示器 (Stepper) */
+    .stepper { display: flex; align-items: flex-start; margin-top: 4px; }
+    .step { display: flex; flex-direction: column; align-items: center; width: 38px; flex: 0 0 auto; }
+    .step-line {
+      flex: 1 1 auto; height: 2px; background: var(--border-color);
+      margin-top: 10px; min-width: 6px; transition: background 0.4s;
+    }
+    .step-line.filled { background: var(--accent-color); }
+    .step-dot {
+      width: 22px; height: 22px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      background: var(--bg-tertiary); color: var(--text-muted);
+      border: 2px solid var(--border-color); transition: all 0.3s;
+    }
+    .step.done .step-dot { background: var(--accent-color); color: #fff; border-color: var(--accent-color); }
+    .step.active .step-dot {
+      border-color: var(--accent-color); color: var(--accent-color);
+      animation: stepBreathe 1.2s ease-in-out infinite;
+    }
+    .step.failed .step-dot { background: var(--danger-color); color: #fff; border-color: var(--danger-color); }
+    .step-label { font-size: 10px; margin-top: 4px; color: var(--text-muted); white-space: nowrap; }
+    .step.active .step-label, .step.done .step-label { color: var(--text-primary); }
+    @keyframes stepBreathe {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.45); }
+      50% { box-shadow: 0 0 0 7px rgba(56, 189, 248, 0); transform: scale(1.12); }
+    }
+    .log-panel {
+      font-size: 11px; color: var(--text-muted);
+      font-family: monospace; line-height: 1.5;
+    }
+    .log-line { padding: 3px 0; border-bottom: 1px solid var(--border-color); }
+    .log-time { color: var(--accent-color); }
+
     /* Theme selector */
     .theme-dot {
       width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
@@ -2755,6 +2789,8 @@ const QueueModule = {
   _knownCompleted: new Set(),
   // V17.2: 首次 poll 仅做种子(标记既有已完成任务,不触发下载)
   _firstPoll: true,
+  // V17.3: 执行日志缓存(按 task_id 缓存, 折叠面板懒加载只拉一次)
+  _logsCache: {},
   t(key) { return I18nModule.t(key); },
 
   start() {
@@ -2765,11 +2801,20 @@ const QueueModule = {
     // Also bind refresh button
     const refreshBtn = document.getElementById('queueRefresh');
     if (refreshBtn) refreshBtn.onclick = () => this.poll();
+    // V17.3: 启动全局每秒计时器(仅更新文本节点, 无重绘闪烁)
+    if (!window.__queueTicker) {
+      window.__queueTicker = setInterval(tickQueueTimers, 1000);
+    }
   },
 
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     document.getElementById('queuePulse').style.display = 'none';
+    // 离开 Queue 视图时停掉全局计时器, 避免无谓开销
+    if (window.__queueTicker) {
+      clearInterval(window.__queueTicker);
+      window.__queueTicker = null;
+    }
   },
 
   async poll() {
@@ -2888,7 +2933,6 @@ const QueueModule = {
     const langLabel = this.t('lang_labels')[item.language] || item.language || '';
     const vibeLabel = this.t('vibe_labels')[item.vibe] || item.vibe || '';
     const pct = Math.round((item.progress || 0) * 100);
-    const date = new Date(item.created_at).toLocaleTimeString();
     const isRunning = RUNNING_STATUSES.includes(item.status);
     const showRetryBtn = !isRunning && !item.final_video_url;
     const statusClass = isRunning ? 'status-running' : 'status-failed';
@@ -2913,8 +2957,29 @@ const QueueModule = {
     const errorHtml = (item.status === 'failed' && item.error_message)
       ? `<div style="margin-top:10px;padding:8px 10px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.3);"><p style="font-size:11px;color:var(--danger-color);margin:0;word-break:break-word;white-space:pre-wrap;">⚠️ ${esc((item.error_message || '').slice(0, 400))}</p></div>`
       : '';
+
+    // V17.3: 时间维度(已耗时 / 预计剩余)
+    const startIso = item.started_at || item.created_at;
+    const startTs = startIso ? new Date(startIso).getTime() : '';
+    const etaMap = { pending:30, scripting:30, img_gen:60, vid_gen:120, audio_gen:30, compositing:30, awaiting_selection:0, completed:0, failed:0 };
+    const etaSec = etaMap[item.status] || 0;
+    let elapsedSec = null, frozen = false;
+    if (item.status === 'completed' || item.status === 'failed') {
+      frozen = true;
+      if (startTs && item.completed_at) {
+        elapsedSec = (new Date(item.completed_at).getTime() - startTs) / 1000;
+      } else if (startTs) {
+        elapsedSec = (Date.now() - startTs) / 1000;
+      }
+    } else if (startTs) {
+      elapsedSec = (Date.now() - startTs) / 1000;
+    }
+    const elapsedText = fmtClock(elapsedSec);
+    const etaText = frozen ? '00:00' : fmtClock(etaSec);
+    const frozenAttr = frozen ? ' data-frozen="1"' : '';
+
     card.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:14px;font-weight:600;color:var(--text-primary);">${langLabel}${langLabel ? ' · ' : ''}${vibeLabel}</span>
             <span class="status-badge ${statusClass}">${statusLabel}</span>
@@ -2922,11 +2987,96 @@ const QueueModule = {
           </div>
           <span style="font-size:11px;color:var(--text-muted);font-family:monospace;">${item.task_id}</span>
         </div>
-        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;"></div></div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
-          <span style="font-size:11px;color:var(--text-muted);">${date}</span>
+
+        ${this._stepperHtml(item)}
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+          <div style="display:flex;gap:16px;font-size:12px;color:var(--text-muted);">
+            <span>⏱️ 已耗时: <b class="q-elapsed" data-start-ts="${startTs}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${elapsedText}</b></span>
+            <span>⏳ 预计剩余: <b class="q-eta" data-start-ts="${startTs}" data-eta="${etaSec}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${etaText}</b></span>
+          </div>
           <span class="pct-text" style="font-size:13px;font-weight:600;color:var(--accent-color);">${pct}%</span>
-        </div>${actionRow}${errorHtml}`;
+        </div>
+        <div class="progress-bar" style="margin-top:8px;"><div class="progress-fill" style="width:${pct}%;"></div></div>
+
+        <div style="margin-top:12px;">
+          <button class="btn-secondary" style="font-size:12px;padding:6px 10px;" onclick="QueueModule.toggleLog('${item.task_id}')">📋 查看执行日志</button>
+        </div>
+        <div id="qlog-${item.task_id}" class="log-panel" style="display:none;margin-top:8px;padding:8px 10px;background:var(--bg-tertiary);border-radius:8px;max-height:180px;overflow:auto;"></div>
+
+        ${actionRow}${errorHtml}`;
+  },
+
+  // V17.3: 阶段步骤指示器(5 节点: 脚本→生图→生视频→配音→合成)
+  _stepperHtml(item) {
+    const nodes = [
+      { key: 'scripting', label: '脚本' },
+      { key: 'img_gen', label: '生图' },
+      { key: 'vid_gen', label: '生视频' },
+      { key: 'audio_gen', label: '配音' },
+      { key: 'compositing', label: '合成' },
+    ];
+    const idxMap = {}; nodes.forEach((n, i) => { idxMap[n.key] = i; });
+    const st = item.status;
+    let doneCount = 0, activeIdx = -1, failedIdx = -1;
+    if (st === 'completed') {
+      doneCount = 5;
+    } else if (st === 'failed') {
+      doneCount = Math.round((item.progress || 0) * 5);
+      failedIdx = Math.min(doneCount, 4);
+    } else if (st === 'awaiting_selection') {
+      doneCount = 3;
+    } else if (st === 'pending') {
+      doneCount = 0;
+    } else {
+      activeIdx = idxMap[st] !== undefined ? idxMap[st] : -1;
+      doneCount = activeIdx >= 0 ? activeIdx : 0;
+    }
+    let html = '<div class="stepper">';
+    nodes.forEach((n, i) => {
+      let cls = 'step';
+      if (i < doneCount) cls += ' done';
+      else if (i === activeIdx) cls += ' active';
+      else if (i === failedIdx) cls += ' failed';
+      const inner = cls.indexOf('done') >= 0 ? '✓' : (cls.indexOf('failed') >= 0 ? '✕' : (i + 1));
+      if (i > 0) html += '<div class="step-line ' + (i <= doneCount ? 'filled' : '') + '"></div>';
+      html += '<div class="' + cls + '"><div class="step-dot">' + inner + '</div><div class="step-label">' + n.label + '</div></div>';
+    });
+    html += '</div>';
+    if (st === 'awaiting_selection') {
+      html += '<div style="margin-top:6px;font-size:11px;color:var(--accent-color);">⏸️ 等待选择候选素材</div>';
+    }
+    return html;
+  },
+
+  // V17.3: 折叠执行日志(懒加载, 每个任务仅拉取一次)
+  toggleLog(taskId) {
+    const panel = document.getElementById('qlog-' + taskId);
+    if (!panel) return;
+    const open = panel.style.display === 'block';
+    panel.style.display = open ? 'none' : 'block';
+    if (open) return;
+    const cached = this._logsCache[taskId];
+    if (cached) { this._renderLog(panel, cached); return; }
+    panel.innerHTML = '<div class="log-line">加载中…</div>';
+    fetch('/api/projects/' + taskId).then(r => r.json()).then(d => {
+      const logs = d.logs || [];
+      this._logsCache[taskId] = logs;
+      this._renderLog(panel, logs);
+    }).catch(() => {
+      panel.innerHTML = '<div class="log-line" style="color:var(--danger-color);">日志加载失败</div>';
+    });
+  },
+
+  _renderLog(panel, logs) {
+    if (!logs.length) {
+      panel.innerHTML = '<div class="log-line">暂无执行日志</div>';
+      return;
+    }
+    panel.innerHTML = logs.map(l => {
+      const t = new Date(l.ts).toLocaleTimeString();
+      return '<div class="log-line"><span class="log-time">[' + t + ']</span> ' + escapeHtml(l.message) + '</div>';
+    }).join('');
   },
 
   // V16.2: 系统唯一视频引擎 = HappyHorse 1.1(已彻底移除通义万相视频兜底),固定显示,不再做动态判断
@@ -3632,6 +3782,33 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// V17.3: 秒数 -> MM:SS
+function fmtClock(sec) {
+  if (sec == null || isNaN(sec)) return '--:--';
+  sec = Math.max(0, Math.floor(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+// V17.3: 每秒仅更新 Queue 卡片上的耗时/剩余文本节点(无重绘闪烁)
+function tickQueueTimers() {
+  document.querySelectorAll('.q-elapsed').forEach(el => {
+    if (el.dataset.frozen === '1') return;
+    const ts = parseFloat(el.dataset.startTs);
+    if (!ts) return;
+    el.textContent = fmtClock((Date.now() - ts) / 1000);
+  });
+  document.querySelectorAll('.q-eta').forEach(el => {
+    if (el.dataset.frozen === '1') return;
+    const ts = parseFloat(el.dataset.startTs);
+    const eta = parseInt(el.dataset.eta, 10);
+    if (isNaN(eta)) return;
+    if (!ts) { el.textContent = fmtClock(eta); return; }
+    const rem = Math.max(0, eta - (Date.now() - ts) / 1000);
+    el.textContent = fmtClock(rem);
+  });
 }
 
 const AuthModule = {

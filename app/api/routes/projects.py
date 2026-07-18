@@ -19,6 +19,7 @@ import io
 import logging
 import uuid
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -1432,6 +1433,32 @@ async def get_project(task_id: str):
             ]
         scenes_info.append(info)
 
+    # V17.3: 耗时 / ETA 估算
+    now = datetime.utcnow()
+    start = project.started_at or project.created_at
+    elapsed_seconds = None
+    if start:
+        try:
+            sd = start if isinstance(start, datetime) else datetime.fromisoformat(str(start))
+            if status in (ProjectStatus.COMPLETED, ProjectStatus.FAILED) and project.completed_at:
+                cd = project.completed_at if isinstance(project.completed_at, datetime) else datetime.fromisoformat(str(project.completed_at))
+                elapsed_seconds = max(0, int((cd - sd).total_seconds()))
+            else:
+                elapsed_seconds = max(0, int((now - sd).total_seconds()))
+        except Exception:
+            elapsed_seconds = None
+    # 各阶段预估剩余秒数(经验值,仅用于进度页安抚性展示)
+    _ETA_MAP = {
+        "pending": 30, "scripting": 30, "img_gen": 60,
+        "vid_gen": 120, "audio_gen": 30, "compositing": 30,
+        "awaiting_selection": 0, "completed": 0, "failed": 0,
+    }
+    estimated_remaining_seconds = 0 if status in (ProjectStatus.COMPLETED, ProjectStatus.FAILED) else _ETA_MAP.get(status.value, 0)
+
+    logs_payload = [
+        (l.model_dump() if hasattr(l, "model_dump") else l) for l in (project.logs or [])
+    ]
+
     return {
         "task_id": task_id,
         "status": status.value,
@@ -1443,6 +1470,12 @@ async def get_project(task_id: str):
         "error": project.error,
         "technical_traceback": project.technical_traceback,
         "creator_name": creator_name,
+        "created_at": detail.get("created_at") if detail else None,
+        "started_at": detail.get("started_at") if detail else None,
+        "completed_at": detail.get("completed_at") if detail else None,
+        "elapsed_seconds": elapsed_seconds,
+        "estimated_remaining_seconds": estimated_remaining_seconds,
+        "logs": logs_payload,
         "director_mode_pro": project.config.candidates_per_scene > 1,
         "candidates_per_scene": project.config.candidates_per_scene,
         "scenes": scenes_info,
