@@ -1451,7 +1451,12 @@ async def get_project(task_id: str):
 
 @router.get("/{task_id}/download")
 async def download_video(task_id: str):
-    """下载最终 MP4。"""
+    """下载最终 MP4。
+
+    V17.2: 显式 filename=AI_Video_{task_id}.mp4,
+    由 FileResponse 注入 Content-Disposition: attachment; filename=...,
+    浏览器强制下载(而非直接播放);Content-Type 固定 video/mp4。
+    """
     project = load_project(task_id)
     if not project:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -1460,4 +1465,8 @@ async def download_video(task_id: str):
     path = Path(project.output.local_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="视频文件不存在")
-    return FileResponse(str(path), media_type="video/mp4", filename=f"{task_id}.mp4")
+    return FileResponse(
+        str(path),
+        media_type="video/mp4",
+        filename=f"AI_Video_{task_id}.mp4",
+    )

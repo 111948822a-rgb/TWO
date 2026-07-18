@@ -886,7 +886,9 @@ class Compositor:
             )
             project.output.subtitle_url = None  # V7.0: 无配音时清除字幕URL
         project.output.local_path = output_path
-        project.output.final_video_url = f"/outputs/{project.project_id}.mp4"
+        # V17.2: 相对路径,经 /storage 静态挂载对外提供(非系统绝对路径 /app/...),
+        # 浏览器可直链 https://域名/storage/outputs/xxx.mp4 访问。
+        project.output.final_video_url = f"/storage/outputs/{project.project_id}.mp4"
         project.output.duration_sec = round(total_duration, 3)
 
         for s in project.scenes:

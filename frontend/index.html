@@ -1219,6 +1219,26 @@
 // ======================================================================
 const RUNNING_STATUSES = ['pending', 'scripting', 'img_gen', 'vid_gen', 'audio_gen', 'compositing'];
 
+// V17.2: 生成完毕自动下载 — 全局去重(跨 Queue / Agent 视图共享一套去重集合)
+const _autoDownloadedIds = new Set();
+function autoDownloadVideo(taskId) {
+  if (_autoDownloadedIds.has(taskId)) return false;  // 已触发过, 防重复
+  _autoDownloadedIds.add(taskId);
+  try {
+    const a = document.createElement('a');
+    // 走带 Content-Disposition: attachment 的下载接口, 确保强制下载而非直接播放
+    a.href = `/api/projects/${taskId}/download`;
+    a.download = `AI_Video_${taskId}.mp4`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();            // 触发浏览器下载(非阻塞 UI 线程)
+    document.body.removeChild(a);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // ======================================================================
 // I18nModule
 // ======================================================================
@@ -2479,6 +2499,7 @@ const HistoryModule = {
           <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">${time} · ${Math.round((item.progress || 0) * 100)}% · ${item.task_id}</p>
           <div style="display:flex;gap:6px;">
             ${retryBtnHtml}
+            <button class="btn-secondary" style="flex:1;padding:6px;font-size:11px;" onclick="event.stopPropagation();HistoryModule.downloadVideo('${item.task_id}')">⬇️ ${this.t('download')}</button>
             <button class="btn-secondary" style="flex:1;padding:6px;font-size:11px;" onclick="event.stopPropagation();HistoryModule.openDrawer('${item.task_id}')">👁️</button>
           </div>
           ${historyErrorHtml}
@@ -2511,6 +2532,19 @@ const HistoryModule = {
     }
   },
 
+  // V17.2: 历史卡片"下载"按钮 — 走带 Content-Disposition 的下载接口,强制落盘
+  downloadVideo(taskId) {
+    try {
+      const a = document.createElement('a');
+      a.href = `/api/projects/${taskId}/download`;
+      a.download = `AI_Video_${taskId}.mp4`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) { /* ignore */ }
+  },
+
   // V9.0: Asset drawer (slide-in from right)
   async openDrawer(taskId) {
     const drawer = document.getElementById('assetDrawer');
@@ -2534,7 +2568,7 @@ const HistoryModule = {
         html += `
           <video src="${data.final_video_url}" controls style="width:100%;border-radius:12px;background:#000;"></video>
           <div style="margin-top:8px;">
-            <a href="${data.final_video_url}" download class="btn-secondary" style="font-size:12px;text-decoration:none;display:inline-block;">${this.t('download')}</a>
+            <a href="/api/projects/${taskId}/download" download class="btn-secondary" style="font-size:12px;text-decoration:none;display:inline-block;">⬇️ ${this.t('download')}</a>
           </div>`;
       } else {
         html += `<p style="font-size:13px;color:var(--text-muted);">${this.t('asset_no_video')}</p>`;
@@ -2717,6 +2751,10 @@ const ProductsModule = {
 const QueueModule = {
   timer: null,
   runningTasks: [],
+  // V17.2: 已"见过的已完成"集合(用于检测 运行→完成 的跃迁, 避免老视频批量下载)
+  _knownCompleted: new Set(),
+  // V17.2: 首次 poll 仅做种子(标记既有已完成任务,不触发下载)
+  _firstPoll: true,
   t(key) { return I18nModule.t(key); },
 
   start() {
@@ -2739,6 +2777,31 @@ const QueueModule = {
       const resp = await fetch('/api/history?page=1&size=50');
       const data = await resp.json();
       const allItems = data.items || [];
+      // V17.2: 检测"运行→完成"跃迁, 自动触发本地下载(仅对新完成的任务)
+      const downloadedNow = [];
+      allItems.forEach(item => {
+        if (item.status === 'completed' && item.final_video_url) {
+          if (this._firstPoll) {
+            // 首次轮询: 仅播种已知已完成任务, 不触发下载(避免老视频批量下载)
+            this._knownCompleted.add(item.task_id);
+          } else if (!this._knownCompleted.has(item.task_id)) {
+            // 新完成的任务 → 触发自动下载(全局去重由 autoDownloadVideo 保证)
+            if (autoDownloadVideo(item.task_id)) downloadedNow.push(item.task_id);
+          }
+          this._knownCompleted.add(item.task_id);
+        } else {
+          // 未完成 → 移出已知集合, 便于未来完成时被捕获
+          this._knownCompleted.delete(item.task_id);
+        }
+      });
+      this._firstPoll = false;
+      if (downloadedNow.length > 0) {
+        const msg = downloadedNow.length === 1
+          ? '✅ 视频生成成功，已开始自动下载到您的本地电脑！'
+          : `✅ ${downloadedNow.length} 个视频生成成功，已开始自动下载到您的本地电脑！`;
+        showToast(msg, 4000);
+      }
+
       // V10.1 P0: 显示运行中任务 + 已停止但无最终视频的任务(需手动合成兜底)
       this.runningTasks = allItems.filter(item => {
         const isRunning = RUNNING_STATUSES.includes(item.status);
@@ -3304,6 +3367,10 @@ const AgentModule = {
         let videoHtml = '';
         if (status === 'completed' && data.video_url) {
           videoHtml = `<video src="${data.video_url}" controls style="width:100%;border-radius:8px;margin-top:8px;"></video>`;
+          // V17.2: 对话中创建的任务完成时, 自动触发本地下载(全局去重, 仅首次提示)
+          if (autoDownloadVideo(taskId)) {
+            showToast('✅ 视频生成成功，已开始自动下载到您的本地电脑！', 4000);
+          }
         }
         let errHtml = '';
         if (status === 'failed' && data.error) {
