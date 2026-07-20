@@ -54,6 +54,14 @@ STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 for subdir in ("outputs", "uploads", "temp", "audios", "images", "videos", "assets", "assets/bgm"):
     (STORAGE_DIR / subdir).mkdir(parents=True, exist_ok=True)
 
+# V17.6: 云端锁定挂载盘 /data(Render 注入 RENDER_EXTERNAL_URL 即视为云端)。
+# 显式创建用户要求的持久化子目录, 杜绝因目录缺失导致 StaticFiles 返回 404。
+# 限定云端执行, 避免本地桌面客户端在 C:\ 误建 /data 目录。
+if os.getenv("RENDER_EXTERNAL_URL"):
+    for _d in ("/data/db", "/data/storage/outputs", "/data/storage/temp", "/data/storage/assets"):
+        os.makedirs(_d, exist_ok=True)
+    logger.info("[Startup] 云端模式: 已显式锁定并创建持久化目录 /data/{db,storage}")
+
 # 诊断:确认实际持久化落点(本地桌面形态应位于 用户文档/AIVideoStudio 之下)
 print(f"💾 [Startup] DATA_DIR={DATA_DIR.resolve()}  STORAGE_DIR={STORAGE_DIR.resolve()}", flush=True)
 

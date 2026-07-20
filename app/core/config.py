@@ -84,30 +84,48 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # ============================================================================
-# 🖥️ 本地存储路径自适应(桌面客户端形态)
+# 🗂️ 存储路径解析(双形态自适应)
 # ----------------------------------------------------------------------------
-# 不再硬编码 /data(Render 专属)。解析顺序:
-#   1. 环境变量 AIVS_DATA_ROOT / AIVS_STORAGE_ROOT 覆盖(服务器/挂载盘场景)
-#   2. 否则落到 用户文档目录 / AIVideoStudio / data|storage(Win/Mac 通用)
-# 初始化时自动创建目录,保证任意环境下首次启动即可读写。
-# 云端部署仍可通过环境变量指向挂载盘(见 render.yaml 的 AIVS_* 配置)。
+#   • 云端(Render): 检测到 RENDER_EXTERNAL_URL 即视为云端, 强制锁死挂载盘 /data
+#     (DATA_ROOT=/data/db, STORAGE_ROOT=/data/storage, SQLite DSN 锁死
+#      sqlite:////data/db/data.db), 与 render.yaml 的 disks.mountPath 一致。
+#     即使 AIVS_DATA_ROOT 等环境变量漏配, 也以 /data 为准, 杜绝部署后路径漂移。
+#   • 本地桌面客户端: 落到 用户文档/AIVideoStudio/{data,storage}(Win/Mac 通用),
+#     初始化时自动创建目录。
+# 所有文件 I/O 一律走 settings.DATA_ROOT / settings.STORAGE_ROOT, 不出现硬编码。
 # ============================================================================
-def _resolve_local_dir(sub: str) -> Path:
-    """解析本地专属目录:环境变量优先,否则落到 用户文档/AIVideoStudio/<sub>。"""
-    env_key = "AIVS_DATA_ROOT" if sub == "data" else "AIVS_STORAGE_ROOT"
-    override = os.getenv(env_key)
-    if override:
-        base = Path(override)
-    else:
-        base = Path.home() / "Documents" / "AIVideoStudio" / sub
-    base.mkdir(parents=True, exist_ok=True)
-    return base
 
+if os.getenv("RENDER_EXTERNAL_URL"):
+    # ---- 云端: 绝对路径锁死 /data(持久化磁盘挂载点) ----
+    settings.DATA_ROOT = "/data/db"
+    settings.STORAGE_ROOT = "/data/storage"
+    settings.DATABASE_URL = "sqlite:////data/db/data.db"
+    print(
+        f"☁️ [Config] 云端模式(Render): 存储锁定 /data "
+        f"(DATA={settings.DATA_ROOT}, STORAGE={settings.STORAGE_ROOT})",
+        flush=True,
+    )
+else:
+    # ---- 本地桌面客户端: 用户文档/AIVideoStudio ----
+    def _resolve_local_dir(sub: str) -> Path:
+        """解析本地专属目录:环境变量优先,否则落到 用户文档/AIVideoStudio/<sub>。"""
+        env_key = "AIVS_DATA_ROOT" if sub == "data" else "AIVS_STORAGE_ROOT"
+        override = os.getenv(env_key)
+        if override:
+            base = Path(override)
+        else:
+            base = Path.home() / "Documents" / "AIVideoStudio" / sub
+        base.mkdir(parents=True, exist_ok=True)
+        return base
 
-_DATA_DIR = _resolve_local_dir("data")
-_STORAGE_DIR = _resolve_local_dir("storage")
+    _DATA_DIR = _resolve_local_dir("data")
+    _STORAGE_DIR = _resolve_local_dir("storage")
 
-settings.DATA_ROOT = str(_DATA_DIR)
-settings.STORAGE_ROOT = str(_STORAGE_DIR)
-if not settings.DATABASE_URL:
-    settings.DATABASE_URL = f"sqlite:///{_DATA_DIR / 'data.db'}"
+    settings.DATA_ROOT = str(_DATA_DIR)
+    settings.STORAGE_ROOT = str(_STORAGE_DIR)
+    if not settings.DATABASE_URL:
+        settings.DATABASE_URL = f"sqlite:///{_DATA_DIR / 'data.db'}"
+    print(
+        f"🖥️ [Config] 本地模式: 存储于 {settings.DATA_ROOT}",
+        flush=True,
+    )

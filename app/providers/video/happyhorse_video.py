@@ -20,6 +20,8 @@ import asyncio
 import base64
 import logging
 import mimetypes
+import os
+import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -90,6 +92,85 @@ def _decode_data_uri(raw: str) -> tuple[bytes, str]:
         raise RuntimeError(f"关键帧图片 data URI 解析失败: {exc}") from exc
 
 
+async def _download_bytes(url: str) -> bytes:
+    """从公网 URL 下载图片字节(供云端场景落盘后经自有公网暴露)。"""
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True
+    ) as client:
+        resp = await client.get(url)
+        if resp.status_code < 200 or resp.status_code >= 300:
+            raise RuntimeError(
+                f"关键帧图片源 URL 下载失败 (HTTP {resp.status_code}): {url}"
+            )
+        return resp.content
+
+
+async def _normalize_to_render_public_url(raw_url: str) -> str:
+    """云端(Render)策略: 将任意来源的关键帧图统一落盘到 STORAGE_ROOT/temp,
+    再经 RENDER_EXTERNAL_URL 暴露为公网 URL, 彻底规避阿里云下载
+    本地路径 / 临时签名 URL / data URI 的各类难题, 且无需依赖 OSS。
+
+    返回形如: https://<app>.onrender.com/storage/temp/keyframe_<uuid>.png
+    """
+    external = os.getenv("RENDER_EXTERNAL_URL")
+    if not external:
+        raise RuntimeError("RENDER_EXTERNAL_URL 未注入,无法生成云端公网图片 URL")
+
+    # 1) 解析为字节(三种来源: data URI / 远程公网 / 本地路径)
+    if raw_url.startswith("data:"):
+        data, fname = _decode_data_uri(raw_url)
+    elif _is_public_http_url(raw_url):
+        # 远程公网图(如 DashScope 结果 URL)先下载落盘, 规避签名过期 / CORS
+        data = await _download_bytes(raw_url)
+        fname = "keyframe.png"
+    else:
+        # 本地路径 / file:// -> 读取字节
+        data, fname = _read_local_file_as_bytes(raw_url)
+
+    # 2) 落盘到 STORAGE_ROOT/temp(StaticFiles 已挂载 /storage -> STORAGE_ROOT)
+    storage_root = Path(settings.STORAGE_ROOT)
+    temp_dir = storage_root / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(fname).suffix or ".png"
+    safe_name = f"keyframe_{uuid.uuid4().hex}{ext}"
+    dest = temp_dir / safe_name
+    await asyncio.to_thread(dest.write_bytes, data)
+
+    # 3) 拼接公网 URL
+    base = external.rstrip("/")
+    return f"{base}/storage/temp/{safe_name}"
+
+
+async def _verify_public_image_url(url: str) -> None:
+    """公网 URL 连通性自检: 调用 HappyHorse 前先自己 GET 一次。
+
+    - data URI 等内联形式跳过(无网络端点可验)
+    - 非 200 直接抛错(如 404 说明 StaticFiles 挂载或路径有误),
+      避免盲目浪费 API 调用
+    - 仅自连网络异常时降级为告警(不阻塞), 因为文件已落盘且 /storage
+      挂载正确, 真实可达性由 HappyHorse 服务器最终判定
+    """
+    if not url.startswith("http"):
+        return
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=8.0), follow_redirects=True
+        ) as client:
+            resp = await client.get(url)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[HappyHorse] 公网图片 URL 自检网络异常(已跳过, 不阻塞): %s | %s",
+            url, exc,
+        )
+        return
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"[HappyHorse] 图片公网 URL 无法访问(HTTP {resp.status_code}),"
+            f"请检查 StaticFiles 挂载(/storage)是否覆盖该文件路径: {url}"
+        )
+    logger.info("[HappyHorse] 图片公网 URL 连通性自检通过 (HTTP 200): %s", url)
+
+
 async def _upload_to_oss_or_base64(data: bytes, fname: str) -> str:
     """方案A(优先):上传 OSS 拿公网 URL;方案B(OSS 未配置):降级 Base64 data URI。"""
     if is_oss_configured():
@@ -118,19 +199,30 @@ async def _upload_to_oss_or_base64(data: bytes, fname: str) -> str:
 async def ensure_public_image_url(raw_url: str) -> str:
     """将任意来源的关键帧图片 URL 转换为 HappyHorse 绝对可访问的公网 URL。
 
-    紧急修复(V17.1):弃用 OSS 作为最终存储后,场景图可能落在本
-    地 Disk(/data/storage/...)或以 data: URI 形式存在。阿里云百炼
-    HappyHorse 服务器无法下载这些图片,导致视频全军覆没。
+    云端(Render)优先策略(V17.6): 一旦检测到 RENDER_EXTERNAL_URL,
+    直接将图片落盘到 /storage/temp 并经 RENDER_EXTERNAL_URL 暴露,
+    彻底规避阿里云下载本地路径 / 临时签名 URL / data URI 的各类难题,
+    且无需依赖 OSS(云端未配置 OSS 时旧逻辑会退化成被拒的 Base64)。
 
-    处理策略:
-      - 已为公网 http(s) URL(非 loopback) -> 直接复用(不重复上传)
-      - data: URI -> 解码为字节 -> 上传 OSS(方案A) / 退化为 base64(方案B)
-      - 本地路径 / loopback -> 读取字节 -> 上传 OSS(方案A) / 退化为 base64(方案B)
+    非云端(本地桌面客户端)沿用原有逻辑:
+      - 公网 http(s) URL -> 直接复用
+      - data: URI -> 解码后中转(OSS 方案A / Base64 方案B)
+      - 本地路径 / loopback -> 读取后中转(OSS 方案A / Base64 方案B)
     """
     if not raw_url or not raw_url.strip():
         raise RuntimeError("关键帧图片 URL 为空,无法生成视频")
     raw_url = raw_url.strip()
 
+    # 云端: 统一经自有公网 /storage 暴露(最稳, 不依赖 OSS)
+    if os.getenv("RENDER_EXTERNAL_URL"):
+        try:
+            return await _normalize_to_render_public_url(raw_url)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[HappyHorse] Render 公网暴露失败, 回落 OSS/Base64 兜底: %s", exc
+            )
+
+    # 原有逻辑(本地 / 兜底)
     # data URI: 解码后中转
     if raw_url.startswith("data:"):
         data, fname = _decode_data_uri(raw_url)
@@ -199,9 +291,15 @@ class HappyHorseVideoProvider(IVideoProvider):
             final_prompt[:80],
         )
 
-        # 紧急修复(V17.1): 将本地路径/loopback/data URI 中转为公网 URL,
-        # 否则阿里云服务器无法下载关键帧图片, 视频生成必然全军覆没。
+        # V17.1 紧急修复 + V17.6 云端公网穿透: 将本地路径/loopback/data URI/
+        # 远程签名 URL 统一中转为 HappyHorse 绝对可访问的公网 URL。
+        # 云端优先经 RENDER_EXTERNAL_URL + /storage 自有挂载暴露, 无需 OSS。
         public_image_url = await ensure_public_image_url(keyframe_image_url)
+        logger.info("[HappyHorse] 准备使用公网图片 URL: %s", public_image_url)
+        # V17.6: 调用 API 前公网 URL 连通性自检(内联 data URI 跳过),
+        # 非 200 直接抛错, 避免盲目浪费 API 调用。
+        if public_image_url.startswith("http"):
+            await _verify_public_image_url(public_image_url)
         if public_image_url != keyframe_image_url:
             logger.info(
                 "[%s] 关键帧图片已中转为公网 URL(原=%s)",
