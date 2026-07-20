@@ -60,7 +60,7 @@ for subdir in ("outputs", "uploads", "temp", "audios", "images", "videos", "asse
 if os.getenv("RENDER_EXTERNAL_URL"):
     for _d in ("/data/db", "/data/storage/outputs", "/data/storage/temp", "/data/storage/assets"):
         os.makedirs(_d, exist_ok=True)
-    logger.info("[Startup] 云端模式: 已显式锁定并创建持久化目录 /data/{db,storage}")
+    print("[Startup] 云端模式: 已显式锁定并创建持久化目录 /data/{db,storage}", flush=True)
 
 # 诊断:确认实际持久化落点(本地桌面形态应位于 用户文档/AIVideoStudio 之下)
 print(f"💾 [Startup] DATA_DIR={DATA_DIR.resolve()}  STORAGE_DIR={STORAGE_DIR.resolve()}", flush=True)
