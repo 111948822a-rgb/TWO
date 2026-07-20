@@ -1493,20 +1493,23 @@ const ThemeModule = {
 // Navigation
 // ======================================================================
 function switchView(viewName) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  const view = document.getElementById('view-' + viewName);
-  if (view) view.classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.view === viewName);
-  });
-  if (viewName === 'queue') QueueModule.start();
-  else QueueModule.stop();
-  if (viewName === 'history') HistoryModule.load();
-  if (viewName === 'products') ProductsModule.load();
-  if (viewName === 'agent') AgentModule.onShow();
-  if (viewName === 'studio') { GenerateModule.updateSpecPreview(); GenerateModule.loadCloneList(); }
-  if (viewName === 'clone') CloneModule.init();
-  if (viewName === 'dashboard') DashboardModule.load();
+  try {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    const view = document.getElementById('view-' + viewName);
+    if (view) view.classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.classList.toggle('active', item.dataset.view === viewName);
+    });
+  } catch (e) { console.error('[switchView] 视图切换基础设置失败:', e); }
+
+  // 各视图的加载/初始化独立隔离, 单个视图异常不影响导航本身(防雪崩)
+  try { if (viewName === 'queue') QueueModule.start(); else QueueModule.stop(); } catch (e) { console.error('[switchView] Queue 切换失败:', e); }
+  try { if (viewName === 'history') HistoryModule.load(); } catch (e) { console.error('[switchView] History 加载失败:', e); }
+  try { if (viewName === 'products') ProductsModule.load(); } catch (e) { console.error('[switchView] Products 加载失败:', e); }
+  try { if (viewName === 'agent') AgentModule.onShow(); } catch (e) { console.error('[switchView] Agent 加载失败:', e); }
+  try { if (viewName === 'studio') { GenerateModule.updateSpecPreview(); GenerateModule.loadCloneList(); } } catch (e) { console.error('[switchView] Studio 加载失败:', e); }
+  try { if (viewName === 'clone') CloneModule.init(); } catch (e) { console.error('[switchView] Clone 初始化失败:', e); }
+  try { if (viewName === 'dashboard') DashboardModule.load(); } catch (e) { console.error('[switchView] Dashboard 加载失败:', e); }
 }
 
 function showToast(msg, duration = 3000) {
@@ -1897,14 +1900,16 @@ const GenerateModule = {
   async loadProducts() {
     try {
       const resp = await fetch('/api/products');
-      const products = await resp.json();
+      const data = await resp.json().catch(() => []);
+      // 防御: 后端返回非数组(如 404 / 错误体)时强制回退为数组, 避免 products.forEach 崩溃
+      const products = Array.isArray(data) ? data : (data && Array.isArray(data.items) ? data.items : []);
       const select = document.getElementById('productSelect');
-      select.innerHTML = `<option value="">${this.t('no_product')}</option>`;
+      if (select) select.innerHTML = `<option value="">${this.t('no_product')}</option>`;
       products.forEach(p => {
         const opt = document.createElement('option');
         opt.value = p.id;
         opt.innerText = p.name;
-        select.appendChild(opt);
+        if (select) select.appendChild(opt);
       });
       this._products = products;
     } catch (e) { console.error('Load products failed:', e); }
@@ -2660,21 +2665,25 @@ const ProductsModule = {
   async load() {
     const tbody = document.getElementById('productsTableBody');
     const empty = document.getElementById('productsEmpty');
-    tbody.innerHTML = '';
+    if (!tbody) return;
     try {
       const resp = await fetch('/api/products');
-      this.products = await resp.json();
+      const data = await resp.json().catch(() => []);
+      // 防御: 后端返回非数组(如 404 / 错误体)时强制回退为数组, 避免 renderTable 中 .filter 崩溃(防雪崩)
+      this.products = Array.isArray(data) ? data : (data && Array.isArray(data.items) ? data.items : []);
       if (this.products.length === 0) {
-        empty.style.display = 'block';
+        if (empty) empty.style.display = 'block';
+        tbody.innerHTML = '';
         return;
       }
-      empty.style.display = 'none';
+      if (empty) empty.style.display = 'none';
       this.renderTable();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('[Products] load failed:', e); tbody.innerHTML = ''; }
   },
 
   renderTable() {
     const tbody = document.getElementById('productsTableBody');
+    if (!tbody || !Array.isArray(this.products)) { if (tbody) tbody.innerHTML = ''; return; }
     const search = (document.getElementById('productSearch')?.value || '').toLowerCase();
     const filtered = this.products.filter(p =>
       p.name.toLowerCase().includes(search) || (p.selling_points || '').toLowerCase().includes(search)
@@ -2797,7 +2806,8 @@ const QueueModule = {
     this.poll();
     if (this.timer) clearInterval(this.timer);
     this.timer = setInterval(() => this.poll(), 2000);
-    document.getElementById('queuePulse').style.display = 'inline-block';
+    const pulse = document.getElementById('queuePulse');
+    if (pulse) pulse.style.display = 'inline-block';
     // Also bind refresh button
     const refreshBtn = document.getElementById('queueRefresh');
     if (refreshBtn) refreshBtn.onclick = () => this.poll();
@@ -2809,7 +2819,8 @@ const QueueModule = {
 
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
-    document.getElementById('queuePulse').style.display = 'none';
+    const pulse = document.getElementById('queuePulse');
+    if (pulse) pulse.style.display = 'none';
     // 离开 Queue 视图时停掉全局计时器, 避免无谓开销
     if (window.__queueTicker) {
       clearInterval(window.__queueTicker);
@@ -2859,39 +2870,40 @@ const QueueModule = {
   },
 
   render() {
-    const list = document.getElementById('queueList');
-    const empty = document.getElementById('queueEmpty');
-    if (!list || !empty) return;
+    try {
+      const list = document.getElementById('queueList');
+      const empty = document.getElementById('queueEmpty');
+      if (!list || !empty) return;
 
-    if (this.runningTasks.length === 0) {
-      list.innerHTML = '';
-      empty.style.display = 'block';
-      return;
-    }
-    empty.style.display = 'none';
-
-    // V12.0: 精准局部更新,杜绝整体闪烁
-    // 1. 收集当前 DOM 中已有的卡片
-    const existingCards = {};
-    list.querySelectorAll('[data-task-id]').forEach(card => {
-      existingCards[card.dataset.taskId] = card;
-    });
-    // 2. 收集本次数据的 task_id 集合
-    const currentIds = new Set(this.runningTasks.map(t => t.task_id));
-    // 3. 移除已不在列表中的卡片
-    Object.keys(existingCards).forEach(id => {
-      if (!currentIds.has(id)) existingCards[id].remove();
-    });
-    // 4. 更新或创建卡片(按顺序)
-    this.runningTasks.forEach(item => {
-      const existing = existingCards[item.task_id];
-      if (existing) {
-        this._updateCardInPlace(existing, item);
-      } else {
-        const card = this._createCard(item);
-        list.appendChild(card);
+      if (this.runningTasks.length === 0) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        return;
       }
-    });
+      empty.style.display = 'none';
+
+      // V12.0: 精准局部更新,杜绝整体闪烁
+      const existingCards = {};
+      list.querySelectorAll('[data-task-id]').forEach(card => {
+        existingCards[card.dataset.taskId] = card;
+      });
+      const currentIds = new Set(this.runningTasks.map(t => t.task_id));
+      Object.keys(existingCards).forEach(id => {
+        if (!currentIds.has(id)) existingCards[id].remove();
+      });
+      // 4. 更新或创建卡片(单卡片渲染失败不影响其他卡片 — 防雪崩)
+      this.runningTasks.forEach(item => {
+        try {
+          const existing = existingCards[item.task_id];
+          if (existing) {
+            this._updateCardInPlace(existing, item);
+          } else {
+            const card = this._createCard(item);
+            list.appendChild(card);
+          }
+        } catch (e) { console.error('[Queue] 渲染单卡片失败:', e); }
+      });
+    } catch (e) { console.error('[Queue] render 失败:', e); }
   },
 
   _createCard(item) {
@@ -2906,6 +2918,7 @@ const QueueModule = {
   },
 
   _updateCardInPlace(card, item) {
+    try {
     // V12.0: 只在状态发生实质性跃迁时才重建内容,否则仅更新进度(无闪烁)
     const prevStatus = card.dataset.status;
     const prevHasVideo = card.dataset.hasVideo === '1';
@@ -2926,6 +2939,7 @@ const QueueModule = {
         badge.innerText = this.t('status_labels')[item.status] || item.status;
       }
     }
+    } catch (e) { console.error('[Queue] 更新卡片失败:', e); }
   },
 
   _renderCardContent(card, item) {
@@ -3794,6 +3808,7 @@ function fmtClock(sec) {
 
 // V17.3: 每秒仅更新 Queue 卡片上的耗时/剩余文本节点(无重绘闪烁)
 function tickQueueTimers() {
+ try {
   document.querySelectorAll('.q-elapsed').forEach(el => {
     if (el.dataset.frozen === '1') return;
     const ts = parseFloat(el.dataset.startTs);
@@ -3809,6 +3824,7 @@ function tickQueueTimers() {
     const rem = Math.max(0, eta - (Date.now() - ts) / 1000);
     el.textContent = fmtClock(rem);
   });
+ } catch (e) { console.error('[tickQueueTimers]', e); }
 }
 
 const AuthModule = {
@@ -3989,31 +4005,37 @@ const AuthModule = {
 
 // 登录成功后执行的应用初始化(原 DOMContentLoaded 内容收敛于此)
 function initApp() {
-  GenerateModule.init();
-  ProductsModule.bindEvents();
-  GenerateModule.loadProducts();
-  AgentModule.init();
-  DashboardModule.load();
+  // 防雪崩: 每个模块的初始化独立 try/catch, 单个模块异常不影响其余模块与全局导航的点击事件
+  const safe = (name, fn) => { try { fn(); } catch (e) { console.error('[init] ' + name + ' 初始化失败(已隔离,不影响其他功能):', e); } };
+  safe('GenerateModule.init', () => GenerateModule.init());
+  safe('ProductsModule.bindEvents', () => ProductsModule.bindEvents());
+  safe('GenerateModule.loadProducts', () => GenerateModule.loadProducts());
+  safe('AgentModule.init', () => AgentModule.init());
+  safe('DashboardModule.load', () => DashboardModule.load());
 
   // V11.0 AI 导演引导卡片点击
   const guideCard = document.getElementById('agentGuideCard');
   if (guideCard) guideCard.addEventListener('click', () => switchView('agent'));
 
-  // V9.0: Asset drawer close
-  document.getElementById('drawerClose').addEventListener('click', () => {
-    document.getElementById('assetDrawer').classList.remove('open');
-    document.getElementById('assetDrawerOverlay').classList.remove('open');
+  // V9.0: Asset drawer close (null 守卫, 元素缺失也不影响其他初始化)
+  const drawerClose = document.getElementById('drawerClose');
+  const assetDrawer = document.getElementById('assetDrawer');
+  const assetDrawerOverlay = document.getElementById('assetDrawerOverlay');
+  if (drawerClose) drawerClose.addEventListener('click', () => {
+    if (assetDrawer) assetDrawer.classList.remove('open');
+    if (assetDrawerOverlay) assetDrawerOverlay.classList.remove('open');
   });
-  document.getElementById('assetDrawerOverlay').addEventListener('click', () => {
-    document.getElementById('assetDrawer').classList.remove('open');
-    document.getElementById('assetDrawerOverlay').classList.remove('open');
+  if (assetDrawerOverlay) assetDrawerOverlay.addEventListener('click', () => {
+    if (assetDrawer) assetDrawer.classList.remove('open');
+    if (assetDrawerOverlay) assetDrawerOverlay.classList.remove('open');
   });
 
   // V9.0: Candidate modal events
-  document.getElementById('candidateClose').addEventListener('click', () => {
-    document.getElementById('candidateModal').classList.add('hidden');
-  });
-  document.getElementById('candidateConfirm').addEventListener('click', () => GenerateModule.confirmCandidates());
+  const candidateClose = document.getElementById('candidateClose');
+  const candidateModal = document.getElementById('candidateModal');
+  const candidateConfirm = document.getElementById('candidateConfirm');
+  if (candidateClose) candidateClose.addEventListener('click', () => { if (candidateModal) candidateModal.classList.add('hidden'); });
+  if (candidateConfirm) candidateConfirm.addEventListener('click', () => GenerateModule.confirmCandidates());
 
   // V9.0: Queue refresh button
   const queueRefresh = document.getElementById('queueRefresh');
