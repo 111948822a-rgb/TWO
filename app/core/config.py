@@ -7,6 +7,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,9 +27,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "ai-video-commerce"
     DEBUG: bool = True
 
-    # --- 数据库(SQLite,锁定 Render Disk 持久化路径) ---
-    # ⚠️ 必须锁死绝对路径 /data/db,否则每次部署 /app 代码区被重建会清空历史
-    DATABASE_URL: str = "sqlite:////data/db/data.db"
+    # --- 数据库(SQLite,本地持久化) ---
+    # 默认落 用户文档/AIVideoStudio/data(桌面客户端形态);可用 DATABASE_URL 环境变量覆盖
+    DATABASE_URL: str = ""
 
     # --- Redis / Celery ---
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -34,12 +37,10 @@ class Settings(BaseSettings):
     # 生产环境置为 False 并启动 celery worker
     CELERY_EAGER: bool = True
 
-    # --- 存储根目录(锁定 Render Disk 持久化路径) ---
-    # ⚠️ Render 仅支持单块磁盘,挂载于 /data。
-    #    数据库单独落 /data/db,所有生成文件落 /data/storage,
-    #    两者均位于持久化盘之下,否则视频/图片每次部署仍会被清空。
-    DATA_ROOT: str = "/data/db"
-    STORAGE_ROOT: str = "/data/storage"
+    # --- 存储根目录(本地持久化,桌面客户端形态) ---
+    # 默认落 用户文档/AIVideoStudio/storage;可用 AIVS_DATA_ROOT / AIVS_STORAGE_ROOT 环境变量覆盖
+    DATA_ROOT: str = ""
+    STORAGE_ROOT: str = ""
 
     # --- DeepSeek(LLM) ---
     DEEPSEEK_API_KEY: str = ""
@@ -83,15 +84,30 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # ============================================================================
-# 🔒 持久化路径强制锁死(Render Disk 防丢失核心防线)
+# 🖥️ 本地存储路径自适应(桌面客户端形态)
 # ----------------------------------------------------------------------------
-# 即便环境变量误配了相对路径(如旧值 "storage" / "./data/data.db"),
-# 此处也会无条件覆盖为绝对路径 /data/db(数据库)与 /data/storage(生成文件),
-# 否则每次部署 /app 代码区被重建会导致数据库与所有视频/图片历史清空。
-# ⚠️ 绝对禁止改回相对路径;本地开发如需变更请直接改下方常量。
+# 不再硬编码 /data(Render 专属)。解析顺序:
+#   1. 环境变量 AIVS_DATA_ROOT / AIVS_STORAGE_ROOT 覆盖(服务器/挂载盘场景)
+#   2. 否则落到 用户文档目录 / AIVideoStudio / data|storage(Win/Mac 通用)
+# 初始化时自动创建目录,保证任意环境下首次启动即可读写。
+# 云端部署仍可通过环境变量指向挂载盘(见 render.yaml 的 AIVS_* 配置)。
 # ============================================================================
-_PERSISTENT_DATA_DIR = "/data/db"
-_PERSISTENT_STORAGE_DIR = "/data/storage"
-settings.DATA_ROOT = _PERSISTENT_DATA_DIR
-settings.STORAGE_ROOT = _PERSISTENT_STORAGE_DIR
-settings.DATABASE_URL = f"sqlite:///{_PERSISTENT_DATA_DIR}/data.db"
+def _resolve_local_dir(sub: str) -> Path:
+    """解析本地专属目录:环境变量优先,否则落到 用户文档/AIVideoStudio/<sub>。"""
+    env_key = "AIVS_DATA_ROOT" if sub == "data" else "AIVS_STORAGE_ROOT"
+    override = os.getenv(env_key)
+    if override:
+        base = Path(override)
+    else:
+        base = Path.home() / "Documents" / "AIVideoStudio" / sub
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+_DATA_DIR = _resolve_local_dir("data")
+_STORAGE_DIR = _resolve_local_dir("storage")
+
+settings.DATA_ROOT = str(_DATA_DIR)
+settings.STORAGE_ROOT = str(_STORAGE_DIR)
+if not settings.DATABASE_URL:
+    settings.DATABASE_URL = f"sqlite:///{_DATA_DIR / 'data.db'}"

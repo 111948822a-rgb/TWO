@@ -24,6 +24,11 @@ services:
       # PORT 由 Render 自动注入,切勿写死;这里仅声明由平台同步
       - key: PORT
         sync: false
+      # V17.4: 本地路径自适应,云端仍指向持久化磁盘 /data(与 disks.mountPath 一致)
+      - key: AIVS_DATA_ROOT
+        value: /data/db
+      - key: AIVS_STORAGE_ROOT
+        value: /data/storage
     # 持久化磁盘(单块):Render 每服务仅支持一块磁盘,挂载于 /data。
     # 数据库(/data/db/data.db)与所有生成文件(/data/storage/*)统一位于其下。
     # ⚠️ 务必在 Render 控制台确认该磁盘 Mount Path = /data(不能挂 /app 整盘)。

@@ -7,18 +7,25 @@
 
 路由:
     /api/projects          创建/查询任务
+    /storage/*             本地生成文件(静态)
     /outputs/*             最终视频(静态)
     /uploads/*             上传图片(静态)
     /                      前端页面(frontend/)
+
+桌面客户端形态说明(V17.4):
+    持久化目录由 app.core.config 自适应解析(用户文档/AIVideoStudio),
+    不再依赖云端 /data 挂载。桌面启动器 desktop_main.py 会以 AIVS_DESKTOP=1
+    环境变量启动本服务,并开放 POST /api/shutdown 供前端"关闭软件"按钮优雅退出。
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import auth, chat, dashboard, history, products, projects
@@ -38,18 +45,16 @@ print(
 
 app = FastAPI(title="AI 带货视频生成系统", version="10.0.0")
 
-# ===== 锁死持久化基础目录(必须位于 Render Disk /data,部署后不丢失) =====
-DATA_DIR = Path(settings.DATA_ROOT)        # /data/db (SQLite)
-STORAGE_DIR = Path(settings.STORAGE_ROOT)  # /data/storage (与数据库同处单块持久化盘)
-# 显式确保挂载点下各目录存在(Render 每部署重建 /app,但 /data 持久化盘需自行建子目录)
-os.makedirs("/data/db", exist_ok=True)
-os.makedirs("/data/storage", exist_ok=True)
+# ===== 本地持久化基础目录(桌面客户端:用户文档/AIVideoStudio,由 config 自适应解析) =====
+DATA_DIR = Path(settings.DATA_ROOT)
+STORAGE_DIR = Path(settings.STORAGE_ROOT)
+# 确保根目录与子目录均存在(config 已建根目录,此处补齐业务子目录)
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 for subdir in ("outputs", "uploads", "temp", "audios", "images", "videos", "assets", "assets/bgm"):
     (STORAGE_DIR / subdir).mkdir(parents=True, exist_ok=True)
 
-# 诊断:确认实际持久化落点(部署后必须位于 /data 下,否则历史仍会丢失)
+# 诊断:确认实际持久化落点(本地桌面形态应位于 用户文档/AIVideoStudio 之下)
 print(f"💾 [Startup] DATA_DIR={DATA_DIR.resolve()}  STORAGE_DIR={STORAGE_DIR.resolve()}", flush=True)
 
 init_db()
@@ -60,6 +65,26 @@ app.include_router(history.router)
 app.include_router(products.router)
 app.include_router(chat.router)
 app.include_router(dashboard.router)
+
+
+@app.post("/api/shutdown")
+async def shutdown():
+    """优雅关闭后台服务(仅桌面端 AIVS_DESKTOP=1 时可用)。
+
+    由前端"关闭软件"按钮调用。返回响应后延迟终止进程,
+    桌面启动器检测到子进程退出即干净收尾,不残留僵尸进程。
+    """
+    if os.environ.get("AIVS_DESKTOP") != "1":
+        raise HTTPException(status_code=403, detail="当前运行模式不支持关闭服务")
+
+    def _delayed_exit():
+        import time
+        time.sleep(0.3)
+        os._exit(0)
+
+    threading.Thread(target=_delayed_exit, daemon=True).start()
+    return {"ok": True, "message": "正在关闭 AI 视频印钞机…"}
+
 
 frontend_dir = Path(__file__).parent.parent / "frontend"
 frontend_dir.mkdir(parents=True, exist_ok=True)

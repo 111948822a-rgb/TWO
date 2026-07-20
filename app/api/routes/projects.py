@@ -58,17 +58,8 @@ router = APIRouter(
 # 所有状态读取一律走数据库(见 load_project)。
 _task_refs: Dict[str, asyncio.Task] = {}  # 后台任务引用(防 GC / 取消用)
 
-STAGE_LABELS: Dict[ProjectStatus, str] = {
-    ProjectStatus.PENDING: "排队中",
-    ProjectStatus.SCRIPTING: "正在生成文案分镜",
-    ProjectStatus.IMG_GEN: "正在生成场景图片",
-    ProjectStatus.VID_GEN: "正在生成视频片段(耗时较长)",
-    ProjectStatus.AUDIO_GEN: "正在合成旁白音频",
-    ProjectStatus.COMPOSITING: "正在后期剪辑合成",
-    ProjectStatus.COMPLETED: "已完成",
-    ProjectStatus.FAILED: "失败",
-    ProjectStatus.AWAITING_SELECTION: "等待选择候选素材",
-}
+# V17.4: STAGE_LABELS 集中到 app.core.constants(避免与 orchestrator 循环依赖)
+from app.core.constants import STAGE_LABELS
 
 
 # ---------------------------------------------------------------------------

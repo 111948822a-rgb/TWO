@@ -46,6 +46,7 @@ from app.services.compositor import Compositor
 from app.services.image_generator import ImageGenerator
 from app.services.script_generator import ScriptGenerator
 from app.services.video_generator import VideoGenerator
+from app.core.constants import STAGE_LABELS
 
 logger = logging.getLogger(__name__)
 

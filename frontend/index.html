@@ -3860,7 +3860,8 @@ const AuthModule = {
           <p style="font-size:10px;color:var(--text-muted);margin:0;">@${escapeHtml(user.username)}</p>
         </div>
         <button class="btn-secondary" style="font-size:11px;padding:6px 10px;flex-shrink:0;" onclick="AuthModule.logout()">退出</button>
-      </div>`;
+      </div>
+      <button class="btn-secondary" style="width:100%;font-size:12px;padding:8px;margin-top:8px;" onclick="AuthModule.closeSoftware()">🔌 关闭软件</button>`;
   },
 
   switchTab(tab) {
@@ -3967,6 +3968,16 @@ const AuthModule = {
     } catch (e) { /* 忽略 */ }
     this.currentUser = null;
     location.reload();
+  },
+
+  // V17.4 桌面端: 优雅关闭整个后台服务(仅桌面模式 AIVS_DESKTOP=1 时后端开放)
+  async closeSoftware() {
+    if (!confirm('确定要关闭 AI 视频印钞机吗？未完成的生成任务将终止。')) return;
+    try {
+      await fetch('/api/shutdown', { method: 'POST', credentials: 'same-origin' });
+    } catch (e) { /* 忽略,服务即将退出 */ }
+    // 后端会在返回响应后延迟终止进程;此处给出提示
+    alert('AI 视频印钞机正在关闭,您可以安全关闭此窗口。');
   },
 
   _initApp() {
