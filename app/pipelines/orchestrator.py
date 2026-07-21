@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import traceback
 from datetime import datetime
 from typing import Awaitable, Callable, List, Optional
@@ -322,7 +323,14 @@ async def _run_scenes_concurrent(
     任一分镜失败则标记该分镜 failed,并最终抛出整体异常。
     """
     project.status = new_status
-    sem = asyncio.Semaphore(project.config.concurrency)
+    # TTS-HARDEN-2: 防御性并发度 —— 即便配置异常 concurrency<=0 也绝不造成
+    # Semaphore(0) 永久死锁(每个 async with sem 永远拿不到锁 → 阶段卡死)
+    concurrency = max(1, int(project.config.concurrency or 1))
+    logger.info(
+        "[%s] %s 并发度: %d (原始配置=%s)",
+        project.project_id, stage_name, concurrency, project.config.concurrency,
+    )
+    sem = asyncio.Semaphore(concurrency)
 
     async def _wrapped(scene: Scene) -> None:
         async with sem:
@@ -367,7 +375,7 @@ async def stage_audio_gen(project: VideoProject) -> None:
 
     voice = resolve_voice(project.input.language)
     logger.info(
-        "[%s] 阶段④ 配音生成开始(语言=%s, 音色=%s)",
+        "[TTS] 阶段④ 配音生成开始(任务=%s, 语言=%s, 音色=%s)",
         project.project_id, project.input.language, voice,
     )
 
@@ -378,16 +386,41 @@ async def stage_audio_gen(project: VideoProject) -> None:
         捕获 TTS 异常后将该分镜 audio.local_path 置 None 并继续,后续合成阶段
         (stage_compositing) 会自动过滤无音频分镜或降级为纯 BGM 无旁白模式,
         确保视频依然能产出,不再"卡在 AI 配音阶段无法继续"。
+
+        TTS-HARDEN-2: 外层 asyncio.wait_for(80s) 兜底 —— 即便 provider 内部
+        的 75s 硬超时墙因任何原因失效(极端事件循环异常),单分镜也绝不会无限
+        死等,最多 80s 必降级为无配音并放行后续分镜/阶段。
         """
+        t0 = time.monotonic()
         try:
             audio_gen = AudioGenerator()
-            await audio_gen.generate_for_scene(scene, voice=voice)
+            logger.info("[TTS] 单分镜 %s 配音开始(音色=%s)", scene.scene_id, voice)
+            await asyncio.wait_for(
+                audio_gen.generate_for_scene(scene, voice=voice),
+                timeout=80.0,
+            )
+            elapsed = time.monotonic() - t0
             scene.status = SceneStatus.AUDIO_DONE
-            logger.info("  [%s] 配音生成完成", scene.scene_id)
-        except Exception as exc:  # noqa: BLE001
+            logger.info(
+                "[TTS] 单分镜 %s 配音完成(耗时 %.1fs)", scene.scene_id, elapsed
+            )
+        except (asyncio.TimeoutError, TimeoutError):
+            # Python 3.10 中 asyncio.TimeoutError 与内置 TimeoutError 是不同类,
+            # 必须同时捕获两者,确保超时一定能走降级而非冒泡中断流水线
+            elapsed = time.monotonic() - t0
             logger.warning(
-                "  [%s] 配音生成失败,降级为无配音(视频仍合成): %s",
-                scene.scene_id, exc,
+                "[TTS] ❌ 单分镜 %s 配音超时(80s, 已耗时 %.1fs),降级为无配音(视频仍合成)",
+                scene.scene_id, elapsed,
+            )
+            if scene.assets and scene.assets.audio:
+                scene.assets.audio.local_path = None
+                scene.assets.audio.duration = None
+            scene.status = SceneStatus.AUDIO_DONE
+        except Exception as exc:  # noqa: BLE001
+            elapsed = time.monotonic() - t0
+            logger.warning(
+                "[TTS] 单分镜 %s 配音失败(耗时 %.1fs),降级为无配音(视频仍合成): %s",
+                scene.scene_id, elapsed, exc,
             )
             # 清除可能残留的音频信息,避免合成阶段误用半成品
             if scene.assets and scene.assets.audio:
