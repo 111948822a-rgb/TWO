@@ -216,30 +216,39 @@ def _verify_file(path: str, min_bytes: int = 1) -> bool:
         return False
 
 
+# [用户要求] 输入文件生死校验阈值:文件必须大于 10KB,排除空壳/截断文件
+MIN_INPUT_BYTES = 10000
+
+
 def _assert_inputs_nonempty(
     project_id: str, labeled_paths: List[tuple[str, str]]
 ) -> None:
-    """FFmpeg 调用前的强制输入自检:任一文件不存在或 0 字节立刻抛异常。
+    """FFmpeg 调用前的强制输入自检(用户要求的'输入文件生死校验')。
 
-    V-FFMPEG-GUARD: 绝不把空文件/缺失文件交给 FFmpeg 处理导致卡死或产出损坏。
+    对每个文件:转绝对路径 → 不存在立刻抛 → 大小 <=10KB(空壳/截断)立刻抛。
+    绝不把坏路径写进 filelist.txt 或交给 FFmpeg 去猜(那样只会卡死或产出损坏)。
     labeled_paths: [(label, path), ...],label 如 "视频[scene_1]" / "音频[scene_1]"。
     """
     logger.info(
-        "[Compositor] 🔍 FFmpeg 前输入自检开始,共 %d 个文件...",
-        len(labeled_paths),
+        "[Compositor] 🔍 FFmpeg 前输入自检开始,共 %d 个文件 (阈值>%dB)...",
+        len(labeled_paths), MIN_INPUT_BYTES,
     )
     for label, path in labeled_paths:
-        if not path or not os.path.exists(path):
+        # 绝对路径:规避相对路径在子进程 cwd 下解析歧义(尤其 Render/ Docker)
+        abs_path = os.path.abspath(path) if path else ""
+        if not abs_path or not os.path.exists(abs_path):
             raise RuntimeError(
-                f"[Compositor] ❌ 输入文件无效: {label} 文件不存在: {path}"
+                f"[Compositor] ❌ 输入文件无效: {label} 文件不存在: {abs_path or path}"
             )
-        size = os.path.getsize(path)
-        if size == 0:
+        size = os.path.getsize(abs_path)
+        # [用户要求] 严格 >10KB,排除空壳/截断文件
+        if size <= MIN_INPUT_BYTES:
             raise RuntimeError(
-                f"[Compositor] ❌ 输入文件无效: {label} 大小为 0: {path}"
+                f"[Compositor] ❌ 输入文件无效: {label} 大小仅 {size}B "
+                f"(<{MIN_INPUT_BYTES}B,疑似空壳/截断损坏): {abs_path}"
             )
         logger.info(
-            "[Compositor] ✓ 输入自检通过 %s: %s (%d bytes)", label, path, size
+            "[Compositor] ✓ 输入自检通过 %s: %s (%d bytes)", label, abs_path, size
         )
     logger.info("[Compositor] ✅ 全部 %d 个输入文件自检通过", len(labeled_paths))
 
@@ -268,12 +277,17 @@ def _run_ffmpeg_cmd(
         RuntimeError:超时或退出码非 0(携带完整命令与 stderr 末段)。
     """
     args = list(cmd_args)
-    # 强制 -y(ffmpeg-python 的 overwrite_output=True 已加则重复无害)
+    # 强制 -y:防止 FFmpeg 在后台无 TTY 时等待用户确认覆盖而永久卡死
     if args and args[0].endswith("ffmpeg"):
-        if "-y" not in args:
+        if "-y" not in args and "-n" not in args:
             args.insert(1, "-y")
     cmd_str = " ".join(args)
-    logger.info("[Compositor][%s] FFmpeg 完整命令:\n%s", level_name, cmd_str)
+    # [用户要求] 执行前打印最终拼接好的完整 FFmpeg 命令行字符串
+    logger.info(
+        "[Compositor][%s] ======== FFmpeg 完整命令 开始 ========\n%s\n"
+        "======== FFmpeg 完整命令 结束 ========",
+        level_name, cmd_str,
+    )
 
     try:
         proc = subprocess.run(
@@ -284,25 +298,31 @@ def _run_ffmpeg_cmd(
         )
     except subprocess.TimeoutExpired as exc:
         stderr = (exc.stderr or b"").decode("utf-8", errors="replace")
+        # [用户要求] 捕获并打印完整 stderr,绝不静默
         logger.error(
-            "[Compositor][%s] ❌ FFmpeg 执行超时(%ds)已被强制终止!\n"
-            "完整命令:\n%s\n==== stderr 末段 ====\n%s",
-            level_name, int(timeout), cmd_str, stderr[-2000:],
+            "[Compositor][%s] ❌❌❌ FFmpeg 执行超时(%ds)已被强制 kill!\n"
+            "======== 完整命令 ========\n%s\n"
+            "======== 完整 stderr(超时前输出) ========\n%s\n"
+            "======== stderr 结束 ========",
+            level_name, int(timeout), cmd_str, stderr,
         )
-        raise RuntimeError(
-            f"[{level_name}] FFmpeg 执行超时({int(timeout)}s)被强制 kill"
-        ) from exc
+        # [用户要求] 超时也必须抛出明确异常,让任务状态变为 FAILED
+        raise RuntimeError("FFmpeg 合成超时") from exc
 
     if proc.returncode != 0:
         stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
+        # [用户要求] 捕获并打印 FFmpeg 标准错误输出(stderr),完整打印不截断
         logger.error(
-            "[Compositor][%s] ❌ FFmpeg 执行失败(退出码=%d)!\n"
-            "完整命令:\n%s\n==== 完整 stderr ====\n%s",
-            level_name, proc.returncode, cmd_str, stderr[-2500:],
+            "[Compositor][%s] ❌❌❌ FFmpeg 执行失败(退出码=%d)!\n"
+            "======== 完整命令 ========\n%s\n"
+            "======== 完整 stderr(FFmpeg 真实报错) ========\n%s\n"
+            "======== stderr 结束 ========",
+            level_name, proc.returncode, cmd_str, stderr,
         )
-        raise RuntimeError(
-            f"[{level_name}] FFmpeg 合成失败(退出码={proc.returncode}): {stderr[-1500:]}"
-        )
+        # [用户要求] 立刻抛出 RuntimeError(携带完整 stderr),
+        # 让上层把任务状态置为 FAILED 并在前端显示具体错误原因。
+        raise RuntimeError(f"FFmpeg 合成失败: {stderr}")
+
     return proc
 
 
@@ -1011,7 +1031,7 @@ def _compose_ultra_minimal(
     list_path = os.path.join(os.path.dirname(output_path), "_ultra_minimal_list.txt")
     with open(list_path, "w", encoding="utf-8") as f:
         for p in valid:
-            ap = os.path.abspath(p).replace("\\", "/").replace("'", r"'\''")
+            ap = os.path.abspath(p).replace("\\", "/").replace("'", "'\\''")
             f.write(f"file '{ap}'\n")
     copy_cmd = [
         ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
@@ -1090,7 +1110,21 @@ def _compose_final_sync(
     sub_font_size = 32 if vid_h <= 1080 else 44
     sub_margin = 80
     sub_fontfile = _resolve_subtitle_fontfile() if sub_segments else None
+    # [用户要求] 字体兜底:字幕/花字字体在 Docker/ Render 中若不存在,
+    # 临时移除字幕烧录参数,先让"纯视频 + 音频"的合成稳定跑通,
+    # 避免 drawtext 因找不到字体而报错(真实报错会被上面的 FFmpeg 完整日志打印)。
+    if sub_segments and not sub_fontfile:
+        logger.warning(
+            "[Compositor] ⚠️ 字幕字体缺失,临时跳过字幕烧录(纯视频+音频模式),"
+            "待字体就绪后可恢复。"
+        )
+        sub_segments = []
     hook_text = scenes[0].hook_text if scenes else None
+    if hook_text and not _resolve_hook_fontfile():
+        logger.warning(
+            "[Compositor] ⚠️ Hook 花字字体缺失,临时跳过 Hook 花字(纯视频+音频模式)。"
+        )
+        hook_text = None
     voiceover_path = str(Path(storage_root) / "temp" / "voiceover.mp3")
     voiceover_ok = (
         has_voiceover

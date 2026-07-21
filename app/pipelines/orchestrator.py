@@ -547,6 +547,17 @@ async def stage_compositing(project: VideoProject) -> None:
     try:
         compositor = Compositor()
         output_path = await compositor.composite(project)
+    except Exception as _comp_exc:  # noqa: BLE001
+        # [用户要求] 状态机兜底保活:合成抛出异常时,立刻把具体错误(含 FFmpeg
+        # stderr)写入 error 字段,并由外层 run_pipeline 统一置为 FAILED +
+        # completed_at,绝不让任务永远停在 COMPOSITING 状态。
+        project.error = f"合成失败：{type(_comp_exc).__name__}: {_comp_exc}"
+        project.completed_at = datetime.utcnow()
+        logger.error(
+            "[%s] 阶段⑤ 合成抛出异常(将置为 FAILED): %s",
+            project.project_id, project.error,
+        )
+        raise
     finally:
         # 恢复原始配音开关(避免降级污染持久化状态)
         project.input.enable_voiceover = original_voiceover
