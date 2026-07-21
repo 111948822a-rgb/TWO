@@ -207,6 +207,15 @@ async def _download_file(url: str, output_path: str, timeout: float = 120.0) -> 
     return output_path
 
 
+def _verify_file(path: str, min_bytes: int = 1) -> bool:
+    """校验文件真实存在于本地磁盘且非空(防"无米之炊")。"""
+    try:
+        p = Path(path)
+        return p.exists() and p.is_file() and p.stat().st_size >= min_bytes
+    except Exception:
+        return False
+
+
 async def _prepare_assets(
     project: VideoProject, storage_root: str
 ) -> tuple[List[str], List[str], str]:
@@ -230,24 +239,44 @@ async def _prepare_assets(
         download_tasks.append(_download_file(clip.url, dst))
 
     logger.info("[%s] 下载 %d 个视频片段...", project.project_id, len(download_tasks))
-    await asyncio.gather(*download_tasks)
-    logger.info("[%s] 视频片段下载完成", project.project_id)
+    downloaded = await asyncio.gather(*download_tasks)
+    # 强制校验:每个视频本地文件必须真实存在且非空(防"无米之炊")
+    for scene, path in zip(project.scenes, downloaded):
+        if not _verify_file(path, min_bytes=1024):
+            logger.warning(
+                "[%s] 分镜 %s 首次下载疑似空文件,重试一次: %s",
+                project.project_id, scene.scene_id, path,
+            )
+            await _download_file(scene.assets.video_clip.url, path)
+        if not _verify_file(path, min_bytes=1024):
+            raise RuntimeError(
+                f"分镜 {scene.scene_id} 视频下载失败或文件为空: {path}"
+            )
+    logger.info("[%s] 视频片段下载完成并校验通过", project.project_id)
 
     # 旁白音频路径(已在阶段④落盘);V4.0 配音关闭时跳过
     audio_paths: List[str] = []
     if project.input.enable_voiceover:
         for scene in project.scenes:
             audio = scene.assets.audio
-            if not audio.local_path or not Path(audio.local_path).exists():
+            if not audio.local_path or not _verify_file(audio.local_path, min_bytes=128):
                 raise RuntimeError(
-                    f"分镜 {scene.scene_id} 旁白音频文件不存在: {audio.local_path}"
+                    f"分镜 {scene.scene_id} 旁白音频文件不存在或为空: {audio.local_path}"
                 )
             audio_paths.append(audio.local_path)
     else:
         logger.info("[%s] 配音已关闭,跳过旁白音频收集", project.project_id)
 
     # BGM 准备(V4.0:按 vibe 选择)
-    bgm_path = await _prepare_bgm(project.input.vibe, str(temp_dir / "bgm.mp3"))
+    # 关键防御: BGM 任何环节失败都不得中断最终合成,降级为无 BGM。
+    try:
+        bgm_path = await _prepare_bgm(project.input.vibe, str(temp_dir / "bgm.mp3"))
+    except Exception as bgm_exc:  # noqa: BLE001
+        logger.warning(
+            "[%s] BGM 准备失败,降级为无 BGM 合成(不中断): %s",
+            project.project_id, bgm_exc,
+        )
+        bgm_path = None
 
     return video_paths, audio_paths, bgm_path
 
@@ -503,11 +532,16 @@ def _concat_voiceover(
         "-c", "copy",
         output_path,
     ]
+    logger.info("[Compositor] voiceover 拼接命令: %s", " ".join(cmd))
     proc = subprocess.run(
         cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
     )
     if proc.returncode != 0:
-        raise RuntimeError(f"拼接 voiceover 失败: {proc.stderr[-800:]}")
+        logger.error(
+            "[Compositor] 拼接 voiceover 失败! 完整命令:\n%s\n==== stderr ====\n%s",
+            " ".join(cmd), proc.stderr[-2000:],
+        )
+        raise RuntimeError(f"拼接 voiceover 失败: {proc.stderr[-1500:]}")
     logger.info("[Compositor] voiceover 拼接完成: %s", output_path)
     return output_path
 
@@ -589,59 +623,36 @@ def _generate_srt(project: VideoProject, srt_path: str) -> str:
 # 阶段 C:最终合成(xfade + tpad + ducking + 字幕,单次 ffmpeg)
 # ---------------------------------------------------------------------------
 
-def _compose_final_sync(
+def _build_final_graph(
     project: VideoProject,
     aligned_paths: List[str],
-    audio_paths: List[str],
     bgm_path: str,
-    srt_path: Optional[str],
     output_path: str,
-    storage_root: str,
     ffmpeg_exe: str,
-) -> str:
-    """最终合成(同步阻塞)。
+    n: int,
+    durations: List[float],
+    total_duration: float,
+    transition: float,
+    has_voiceover: bool,
+    sub_segments: list,
+    sub_fontfile: str | None,
+    sub_font_size: int,
+    sub_margin: int,
+    vid_h: int,
+    hook_text: str | None,
+    voiceover_path: str,
+    voiceover_ok: bool,
+    opts: dict,
+) -> "object":
+    """按档位 opts 构建 ffmpeg filter graph,返回 output 节点。
 
-    V4.0 双模式:
-      - 有配音(enable_voiceover=True): xfade + tpad + drawtext 字幕链
-        + voiceover(主) + BGM(sidechaincompress ducking) amix
-      - 无配音(enable_voiceover=False): xfade + tpad(无字幕)
-        + 仅 BGM 循环(atrim 到视频总时长),无旁白无字幕
-
-    V12.0 重大重构: 废弃 subtitles 滤镜(SRT 内部样式覆盖命令行参数导致铺满全屏),
-    改用 drawtext 滤镜链为每句旁白动态生成精确的字幕叠加:
-      fontsize=32 / borderw=3 / y=h-th-80 / enable='between(t,start,end)'
-    V7.0: srt_path 为 None 时不烧录字幕。
-    V4.0 Hook Text: 第一个分镜的 hook_text 用 drawtext 在画面正中央。
+    opts 结构:
+        use_subtitles: bool  —— 是否烧录 drawtext 字幕
+        use_hook:      bool  —— 是否叠加 Hook 花字
+        audio_mode:    str   —— voiceover_bgm / voiceover_only / bgm_only / none
     """
-    scenes = project.scenes
-    n = len(scenes)
-    has_voiceover = project.input.enable_voiceover
-    transition = settings.TRANSITION_DURATION
-
-    # 时长:有配音用音频时长(音画已对齐),无配音用视频原始时长
-    if has_voiceover:
-        durations = [s.assets.audio.duration or 0.0 for s in scenes]
-    else:
-        durations = [s.assets.video_clip.duration or 0.0 for s in scenes]
-    total_duration = sum(durations)
-
-    # ---- V12.0 字幕片段预构建(供 drawtext 链使用) ----
-    sub_segments = _build_subtitle_segments(project) if has_voiceover else []
-    _, vid_h = _get_aspect_resolution(project.input.aspect_ratio)
-    sub_font_size = 32 if vid_h <= 1080 else 44
-    sub_margin = 80
-    sub_fontfile = _resolve_subtitle_fontfile() if sub_segments else None
-    if sub_segments:
-        logger.info(
-            "[Compositor] V12.0 drawtext 字幕: %d 条, FontSize=%d, y=h-th-%d (高度=%d)",
-            len(sub_segments), sub_font_size, sub_margin, vid_h,
-        )
-
-    # ---- 输入流 ----
-    aligned_inputs = [ffmpeg.input(p) for p in aligned_paths]
-    bgm_in = ffmpeg.input(bgm_path, stream_loop=-1)
-
     # ---- 视频轨:xfade 链 ----
+    aligned_inputs = [ffmpeg.input(p) for p in aligned_paths]
     v_streams = [
         ai.video
         .filter("setpts", "PTS-STARTPTS")
@@ -670,132 +681,253 @@ def _compose_final_sync(
                 "tpad", stop_mode="clone", stop_duration=pad_duration
             )
 
-    # ---- V4.0 Hook Text drawtext(黄金3秒钩子花字) ----
-    hook_text = scenes[0].hook_text if scenes else None
-    if hook_text and hook_text.strip():
+    # ---- Hook 花字 ----
+    if opts.get("use_hook") and hook_text and hook_text.strip():
         fontfile = _resolve_hook_fontfile()
-        escaped_text = _escape_drawtext_text(hook_text.strip())
         drawtext_kwargs: dict = {
-            "text": escaped_text,
+            "text": _escape_drawtext_text(hook_text.strip()),
             "fontsize": 72,
             "fontcolor": "white",
             "borderw": 4,
             "bordercolor": "black",
             "x": "(w-text_w)/2",
             "y": "(h-text_h)/2",
-            # alpha 表达式:0-2s 全显,2-3s 线性淡出
             "alpha": "if(lt(t,2),1,if(lt(t,3),3-t,0))",
             "enable": "between(t,0,3)",
         }
         if fontfile:
             drawtext_kwargs["fontfile"] = fontfile
         chain = chain.filter("drawtext", **drawtext_kwargs)
-        logger.info("[Compositor] Hook 花字叠加: '%s' (0-2s全显,2-3s淡出)", hook_text[:40])
 
-    # ---- V12.0 字幕烧录:drawtext 滤镜链(废弃 subtitles 滤镜) ----
-    # 每句旁白一个 drawtext 节点,通过 enable='between(t,start,end)' 精确控制显示时间。
-    # 坐标: x=(w-text_w)/2 水平居中, y=h-th-80 距底部 80px(绝不铺满全屏)。
-    for seg_start, seg_end, seg_text in sub_segments:
-        escaped_seg = _escape_drawtext_text(seg_text)
-        dt_sub_kwargs: dict = {
-            "text": escaped_seg,
-            "fontsize": sub_font_size,
-            "fontcolor": "white",
-            "borderw": 3,
-            "bordercolor": "black",
-            "x": "(w-text_w)/2",
-            "y": f"h-th-{sub_margin}",
-            "enable": f"between(t,{seg_start:.3f},{seg_end:.3f})",
-        }
-        if sub_fontfile:
-            dt_sub_kwargs["fontfile"] = sub_fontfile
-        chain = chain.filter("drawtext", **dt_sub_kwargs)
+    # ---- 字幕烧录(drawtext 链) ----
+    if opts.get("use_subtitles"):
+        for seg_start, seg_end, seg_text in sub_segments:
+            dt_sub_kwargs: dict = {
+                "text": _escape_drawtext_text(seg_text),
+                "fontsize": sub_font_size,
+                "fontcolor": "white",
+                "borderw": 3,
+                "bordercolor": "black",
+                "x": "(w-text_w)/2",
+                "y": f"h-th-{sub_margin}",
+                "enable": f"between(t,{seg_start:.3f},{seg_end:.3f})",
+            }
+            if sub_fontfile:
+                dt_sub_kwargs["fontfile"] = sub_fontfile
+            chain = chain.filter("drawtext", **dt_sub_kwargs)
 
     # ---- 音频轨 ----
-    if has_voiceover:
-        # 有配音:voiceover(主) + BGM(sidechaincompress ducking) amix
-        voiceover_path = str(Path(storage_root) / "temp" / "voiceover.mp3")
-        voice_main = ffmpeg.input(voiceover_path)
-        voice_sc = ffmpeg.input(voiceover_path)
+    audio_mode = opts.get("audio_mode", "none")
+    final_audio = None
 
-        bgm = (
-            bgm_in.audio
-            .filter("atrim", duration=round(total_duration, 3))
-            .filter("asetpts", "PTS-STARTPTS")
+    if audio_mode == "voiceover_bgm" and voiceover_ok:
+        # 有配音:voiceover(主) + BGM(sidechaincompress ducking) amix
+        bgm_in = (
+            ffmpeg.input(bgm_path, stream_loop=-1)
+            if (bgm_path and Path(bgm_path).exists())
+            else None
         )
-        bgm_ducked = ffmpeg.filter(
-            [bgm, voice_sc.audio],
-            "sidechaincompress",
-            threshold=0.05,
-            ratio=8,
-            attack=5,
-            release=300,
-            makeup=2,
-        )
-        bgm_ducked = bgm_ducked.filter("volume", 0.35)
-        final_audio = ffmpeg.filter(
-            [voice_main.audio, bgm_ducked],
-            "amix",
-            inputs=2,
-            duration="first",
-            dropout_transition=0,
-        )
-    else:
-        # 无配音:仅 BGM 循环,截断到视频总时长,音量适中
-        final_audio = (
-            bgm_in.audio
-            .filter("atrim", duration=round(total_duration, 3))
-            .filter("asetpts", "PTS-STARTPTS")
-            .filter("volume", 0.5)  # 无旁白时 BGM 稍大声
-        )
-        logger.info(
-            "[Compositor] 无配音模式:仅 BGM 循环 %.2fs", total_duration
-        )
+        if bgm_in is None:
+            audio_mode = "voiceover_only"
+        else:
+            voice_main = ffmpeg.input(voiceover_path)
+            voice_sc = ffmpeg.input(voiceover_path)
+            bgm = (
+                bgm_in.audio
+                .filter("atrim", duration=round(total_duration, 3))
+                .filter("asetpts", "PTS-STARTPTS")
+            )
+            bgm_ducked = ffmpeg.filter(
+                [bgm, voice_sc.audio],
+                "sidechaincompress",
+                threshold=0.05, ratio=8, attack=5, release=300, makeup=2,
+            ).filter("volume", 0.35)
+            final_audio = ffmpeg.filter(
+                [voice_main.audio, bgm_ducked],
+                "amix", inputs=2, duration="first", dropout_transition=0,
+            )
+
+    if audio_mode == "voiceover_only" and voiceover_ok:
+        # 仅旁白(无字幕/BGM 的降级档位)
+        final_audio = ffmpeg.input(voiceover_path).audio
+
+    elif audio_mode == "bgm_only":
+        # 仅 BGM 循环(无配音模式 / 配音缺失降级)
+        if bgm_path and Path(bgm_path).exists():
+            final_audio = (
+                ffmpeg.input(bgm_path, stream_loop=-1).audio
+                .filter("atrim", duration=round(total_duration, 3))
+                .filter("asetpts", "PTS-STARTPTS")
+                .filter("volume", 0.5)
+            )
+        else:
+            logger.warning("[Compositor] bgm_only 但 BGM 文件不可用,退化为纯视频")
+            final_audio = None
 
     # ---- 输出 ----
-    out = ffmpeg.output(
-        chain, final_audio, output_path,
+    common = dict(
         vcodec="libx264",
         crf=settings.OUTPUT_CRF,
         pix_fmt="yuv420p",
         preset="medium",
-        acodec="aac",
-        ab="192k",
         r=settings.OUTPUT_FPS,
         **{"movflags": "+faststart"},
     )
+    if final_audio is not None:
+        out = ffmpeg.output(
+            chain, final_audio, output_path, acodec="aac", ab="192k", **common
+        )
+    else:
+        # 极简档位:纯视频,无音频轨
+        out = ffmpeg.output(chain, output_path, **common)
+    return out
 
-    logger.info(
-        "[Compositor] 开始最终合成: %d 个分镜, 转场 %.1fs, 总时长 %.2fs, 配音=%s, 输出=%s",
-        n, transition, total_duration, has_voiceover, output_path,
-    )
-    # V12.0: 打印完整 FFmpeg 命令,人工检查 drawtext 的 y 坐标是否正确
+
+def _run_ffmpeg(out: "object", ffmpeg_exe: str, output_path: str, level_name: str) -> None:
+    """执行单次 ffmpeg 合成,捕获并打印完整命令与 stderr;校验产物。
+
+    失败时抛出 RuntimeError(携带完整命令与 stderr 末段),供降级档位捕获。
+    """
+    # 编译并打印完整命令(人工排查关键)
     try:
         cmd_args = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
-        # 只打印 drawtext 相关片段(避免命令过长)
         cmd_str = " ".join(cmd_args)
-        drawtext_parts = [p for p in cmd_args if "drawtext" in p or "h-th-" in p]
-        logger.info("[Compositor] FFmpeg 命令(drawtext 片段检查): %s", drawtext_parts)
-        logger.info("[Compositor] FFmpeg 完整命令长度: %d 字符", len(cmd_str))
-    except Exception as compile_err:  # noqa: BLE001
-        logger.warning("[Compositor] 无法编译 FFmpeg 命令预览: %s", compile_err)
+    except Exception as ce:  # noqa: BLE001
+        cmd_str = f"(ffmpeg.compile 失败: {ce})"
+    logger.info("[Compositor][%s] FFmpeg 完整命令:\n%s", level_name, cmd_str)
+
     try:
-        logger.info("[Compositor] 调用 ffmpeg.run() 进行最终合成...")
         ffmpeg.run(
             out, cmd=ffmpeg_exe, overwrite_output=True,
             capture_stderr=True, quiet=True,
         )
-        logger.info("[Compositor] ffmpeg.run() 最终合成成功!")
     except ffmpeg.Error as exc:
         stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else str(exc)
         logger.error(
-            "[Compositor] 最终合成 ffmpeg 失败 (完整 stderr 末 2000 字):\n%s",
-            stderr[-2000:],
+            "[Compositor][%s] FFmpeg 执行失败!\n完整命令:\n%s\n==== 完整 stderr ====\n%s",
+            level_name, cmd_str, stderr[-2500:],
         )
-        raise RuntimeError(f"最终合成失败: {stderr[-1200:]}") from exc
+        raise RuntimeError(f"[{level_name}] FFmpeg 合成失败: {stderr[-1500:]}") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[Compositor][%s] FFmpeg 调用异常: %s", level_name, exc)
+        raise
 
-    logger.info("[Compositor] 最终合成完成: %s", output_path)
-    return output_path
+    # 产物校验:必须真实存在且非空
+    p = Path(output_path)
+    if not p.exists():
+        raise RuntimeError(f"[{level_name}] FFmpeg 退出但未生成文件: {output_path}")
+    if p.stat().st_size < 1024:
+        raise RuntimeError(
+            f"[{level_name}] FFmpeg 生成文件过小(疑似空): {output_path} size={p.stat().st_size}"
+        )
+    logger.info(
+        "[Compositor][%s] 产物校验通过: %s (%d bytes)",
+        level_name, output_path, p.stat().st_size,
+    )
+
+
+def _compose_final_sync(
+    project: VideoProject,
+    aligned_paths: List[str],
+    audio_paths: List[str],
+    bgm_path: str,
+    srt_path: Optional[str],
+    output_path: str,
+    storage_root: str,
+    ffmpeg_exe: str,
+) -> str:
+    """最终合成(同步阻塞)——带三级降级档位,保证"只要有分镜视频就出 MP4"。
+
+    档位设计(逐档简化,任一档失败自动退到下一档):
+      L1 完美合成 : 视频xfade转场 + Hook花字 + 字幕烧录 + 旁白 + BGM(ducking)
+      L2 降级合成 : 视频xfade转场 + 仅旁白(去掉字幕/BGM/Hook花字)
+      L3 极简合成 : 纯视频xfade转场拼接(无任何音频与字幕)
+
+    只要分镜视频在,至少 L3 一定能吐出可播放的 MP4。
+    """
+    scenes = project.scenes
+    n = len(scenes)
+    has_voiceover = project.input.enable_voiceover
+    transition = settings.TRANSITION_DURATION
+
+    # 时长:有配音用音频时长(音画已对齐),无配音用视频原始时长
+    if has_voiceover:
+        durations = [s.assets.audio.duration or 0.0 for s in scenes]
+    else:
+        durations = [s.assets.video_clip.duration or 0.0 for s in scenes]
+    total_duration = sum(durations)
+
+    # ---- 字幕片段预构建(供 drawtext 链) ----
+    sub_segments = _build_subtitle_segments(project) if has_voiceover else []
+    _, vid_h = _get_aspect_resolution(project.input.aspect_ratio)
+    sub_font_size = 32 if vid_h <= 1080 else 44
+    sub_margin = 80
+    sub_fontfile = _resolve_subtitle_fontfile() if sub_segments else None
+    hook_text = scenes[0].hook_text if scenes else None
+    voiceover_path = str(Path(storage_root) / "temp" / "voiceover.mp3")
+    voiceover_ok = (
+        has_voiceover
+        and Path(voiceover_path).exists()
+        and Path(voiceover_path).stat().st_size > 0
+    )
+
+    if sub_segments:
+        logger.info(
+            "[Compositor] V12.0 drawtext 字幕: %d 条, FontSize=%d, y=h-th-%d (高度=%d)",
+            len(sub_segments), sub_font_size, sub_margin, vid_h,
+        )
+    logger.info(
+        "[Compositor] 最终合成准备: 分镜=%d, 转场=%.1fs, 总时长=%.2fs, "
+        "配音=%s, 字幕段=%d, 旁白文件=%s, BGM=%s",
+        n, transition, total_duration, has_voiceover, len(sub_segments),
+        "有" if voiceover_ok else "无", "有" if bgm_path else "无",
+    )
+
+    # 三级档位(从完美到极简)
+    levels = [
+        (
+            "L1_完美合成",
+            dict(
+                use_subtitles=True, use_hook=True,
+                audio_mode=("voiceover_bgm" if voiceover_ok else "bgm_only"),
+            ),
+        ),
+        (
+            "L2_降级(去字幕/BGM)",
+            dict(
+                use_subtitles=False, use_hook=False,
+                audio_mode=("voiceover_only" if voiceover_ok else "bgm_only"),
+            ),
+        ),
+        (
+            "L3_极简(纯视频)",
+            dict(use_subtitles=False, use_hook=False, audio_mode="none"),
+        ),
+    ]
+
+    last_exc: Exception | None = None
+    for lvl_name, opts in levels:
+        try:
+            logger.info("[Compositor] ▶ 尝试合成档位: %s", lvl_name)
+            out = _build_final_graph(
+                project, aligned_paths, bgm_path, output_path, ffmpeg_exe,
+                n, durations, total_duration, transition, has_voiceover,
+                sub_segments, sub_fontfile, sub_font_size, sub_margin, vid_h,
+                hook_text, voiceover_path, voiceover_ok, opts,
+            )
+            _run_ffmpeg(out, ffmpeg_exe, output_path, lvl_name)
+            logger.warning(
+                "[Compositor] ✅ 合成成功(档位=%s): %s", lvl_name, output_path
+            )
+            return output_path
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.error(
+                "[Compositor] ❌ 档位 %s 失败: %s", lvl_name, exc
+            )
+            continue
+
+    raise RuntimeError(f"所有合成档位(L1/L2/L3)均失败,最后错误: {last_exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -830,6 +962,23 @@ class Compositor:
 
         ffmpeg_exe = _get_ffmpeg_exe()
         has_voiceover = project.input.enable_voiceover
+
+        # ---- FFmpeg 环境自检:确认可执行文件能真正运行,而非仅路径存在 ----
+        try:
+            _ver = subprocess.run(
+                [ffmpeg_exe, "-version"],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=30,
+            )
+            if _ver.returncode != 0:
+                raise RuntimeError(f"ffmpeg -version 返回非零: {_ver.stderr[-500:]}")
+            _ver_line = _ver.stdout.splitlines()[0] if _ver.stdout else ffmpeg_exe
+            logger.info("[%s] FFmpeg 环境自检通过: %s", project.project_id, _ver_line)
+        except Exception as ffchk:  # noqa: BLE001
+            raise RuntimeError(
+                f"FFmpeg 环境自检失败(命令无法执行): {ffchk}"
+            ) from ffchk
+
         logger.info(
             "[%s] 阶段⑤ 合成开始(ffmpeg: %s, 配音=%s)",
             project.project_id, ffmpeg_exe, has_voiceover,
@@ -838,6 +987,14 @@ class Compositor:
         # 阶段 A:素材准备
         video_paths, audio_paths, bgm_path = await _prepare_assets(
             project, storage_root
+        )
+
+        # ---- 输入文件自检(防"无米之炊") ----
+        logger.info(
+            "[Compositor] 输入文件自检: 视频(%d个), 音频(%d个), 字幕(%s), BGM(%s)",
+            len(video_paths), len(audio_paths),
+            "有" if has_voiceover else "无",
+            "有" if bgm_path else "无",
         )
 
         # 阶段 B:音画对齐(并行)
