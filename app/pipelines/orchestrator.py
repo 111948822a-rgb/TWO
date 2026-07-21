@@ -601,6 +601,17 @@ async def run_pipeline(
 
     try:
         for i, stage in enumerate(flow):
+            # ================= 阶段流转关键修复 (V-STATE-FLOW) =================
+            # 此前 _sync_db 仅在阶段"完成后"调用(见循环末尾),导致 COMPOSITING
+            # 阶段在 FFmpeg 跑完(可能数分钟)之前,数据库状态一直停留在 AUDIO_GEN,
+            # 前端因此"卡在配音阶段不动"。现在进入每个阶段的第一时间就把
+            # status + "开始阶段"日志落库,前端立即能看到"正在合成视频"。
+            project.status = stage
+            if stage == ProjectStatus.COMPOSITING:
+                logger.info(
+                    "[Orchestrator] TTS 已完成，状态切换为 COMPOSITING，"
+                    "准备调用 FFmpeg..."
+                )
             logger.info(
                 "[Task %s] 🚀 开始阶段: %s (%d/%d)",
                 task_id, stage.value, i + 1, total,
@@ -610,6 +621,8 @@ async def run_pipeline(
                 stage=stage.value,
                 message=f"开始阶段：{STAGE_LABELS.get(stage, stage.value)}",
             ))
+            # ← 阶段一开始即同步 DB,前端实时看到当前阶段(彻底修复"卡在配音"显示)
+            _sync_db(project)
             handler = STAGE_HANDLERS[stage]
             await handler(project)
             project.progress = round((i + 1) / total, 2)
