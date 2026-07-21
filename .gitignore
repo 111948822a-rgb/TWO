@@ -27,3 +27,8 @@ data/*
 *.db-shm
 *.db-wal
 
+
+# 本地测试用 ffmpeg 二进制(勿提交,138MB,超 GitHub 限制)
+bin/ffmpeg.exe
+# 本地验证脚本(非部署产物)
+scripts/

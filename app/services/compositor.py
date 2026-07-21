@@ -467,6 +467,33 @@ async def _prepare_bgm(vibe: str, target_path: str) -> str:
 # 阶段 B:音画对齐(并行)
 # ---------------------------------------------------------------------------
 
+def _build_atempo_chain(audio_stream, tempo: float):
+    """V18.0 Pacing Engine:构建 atempo 变速滤镜链(支持超出 [0.5, 2.0] 的倍率)。
+
+    FFmpeg 单个 atempo 仅接受 0.5~2.0 的倍率,超出需级联多个 atempo 相乘。
+    例如 tempo=3.0 → atempo=2.0 × atempo=1.5;tempo=0.3 → atempo=0.5 × atempo=0.6。
+
+    Args:
+        audio_stream: ffmpeg-python 音频流对象。
+        tempo: 期望的总变速倍率(>1 加速,<1 减速)。
+
+    Returns:
+        应用了级联 atempo 后的音频流。
+    """
+    remaining = max(0.1, float(tempo))
+    a = audio_stream
+    # 加速方向:remaining > 2.0 时先乘 2.0
+    while remaining > 2.0 + 1e-6:
+        a = a.filter("atempo", 2.0)
+        remaining /= 2.0
+    # 减速方向:remaining < 0.5 时先乘 0.5
+    while remaining < 0.5 - 1e-6:
+        a = a.filter("atempo", 0.5)
+        remaining /= 0.5
+    a = a.filter("atempo", round(remaining, 4))
+    return a
+
+
 def _align_scene_sync(
     scene: Scene,
     video_path: str,
@@ -483,9 +510,14 @@ def _align_scene_sync(
     附加静音音轨(anullsrc)供 xfade 链使用。
     V11.0:aspect_ratio 动态适配 9:16/16:9/1:1 分辨率。
     """
-    dv = scene.assets.video_clip.duration or 0.0
+    dv = scene.actual_video_duration or scene.assets.video_clip.duration or 0.0
     if dv <= 0:
         raise RuntimeError(f"分镜 {scene.scene_id} 视频时长异常: {dv}s")
+
+    # V18.0 Pacing Engine:节奏目标时长 > 0 时,启用"精准卡点"模式,
+    #   最终成片每个分镜严格等于 target_duration(裁剪/变速/补帧 + atempo/补静音)。
+    pacing_td = float(scene.target_duration or 0.0)
+    pacing_on = pacing_td > 0.0
 
     v_in = ffmpeg.input(video_path)
 
@@ -503,7 +535,68 @@ def _align_scene_sync(
     v = ffmpeg.filter([bg, fg], "overlay", x="(W-w)/2", y="(H-h)/2")
     v = v.filter("setsar", 1)
 
-    if has_audio:
+    if pacing_on:
+        # =================================================================
+        # V18.0 Pacing Engine 精准卡点:锁定 target_duration 为唯一基准
+        #   视频:dv>td → 加速+裁剪;dv<td → 慢放变速 或 冻结尾帧补足
+        #   音频:da>td → atempo 加速;da<td → apad 补静音;并 atrim 到 td
+        # =================================================================
+        td = round(pacing_td, 3)
+        # -------- 视频对齐到 td --------
+        if dv > td + 0.05:
+            factor = td / dv                      # <1 压缩时间轴 = 加速
+            v = v.filter("setpts", f"{factor:.6f}*PTS")
+            v = v.filter("trim", duration=td).filter("setpts", "PTS-STARTPTS")
+            v_op = f"加速×{dv / td:.2f}+裁剪(丢弃{dv - td:.2f}s)"
+        elif dv < td - 0.05:
+            factor = td / dv                      # >1 拉伸时间轴 = 慢放
+            if factor <= 1.5:
+                v = v.filter("setpts", f"{factor:.6f}*PTS")
+                v = v.filter("trim", duration=td).filter("setpts", "PTS-STARTPTS")
+                v_op = f"慢放×{factor:.2f}"
+            else:
+                # 差距过大,慢放会拖沓 → 冻结尾帧补足(tpad clone)
+                v = v.filter("setpts", "PTS-STARTPTS")
+                v = v.filter("tpad", stop_mode="clone", stop_duration=round(td - dv, 3))
+                v = v.filter("trim", duration=td).filter("setpts", "PTS-STARTPTS")
+                v_op = f"冻结尾帧补足{td - dv:.2f}s"
+        else:
+            v = v.filter("setpts", "PTS-STARTPTS")
+            v_op = "无需变速(已对齐)"
+        v = v.filter("fps", fps=settings.OUTPUT_FPS)
+
+        # -------- 音频对齐到 td --------
+        if has_audio and (scene.assets.audio.duration or 0.0) > 0:
+            da = scene.assets.audio.duration or 0.0
+            a_in = ffmpeg.input(audio_path)
+            a = a_in.audio
+            if da > td + 0.05:
+                tempo = da / td
+                a = _build_atempo_chain(a, tempo)
+                a = a.filter("atrim", duration=td).filter("asetpts", "PTS-STARTPTS")
+                a_op = f"atempo×{tempo:.2f}(加速)"
+            elif da < td - 0.05:
+                a = a.filter("apad")
+                a = a.filter("atrim", duration=td).filter("asetpts", "PTS-STARTPTS")
+                a_op = f"apad补静音{td - da:.2f}s"
+            else:
+                a = a.filter("atrim", duration=td).filter("asetpts", "PTS-STARTPTS")
+                a_op = "对齐"
+        else:
+            a = ffmpeg.input(
+                "anullsrc=channel_layout=stereo:sample_rate=44100",
+                f="lavfi", t=str(td),
+            ).audio
+            a_op = "静音轨"
+        target_duration = td
+
+        # ★★★ 用户要求的关键日志:每分镜时间轴对齐详情 ★★★
+        logger.info(
+            "[%s] [FFmpeg 时间轴对齐] 阶段: %s | 目标: %.1fs, 实际素材: %.1fs, "
+            "视频操作: %s, 音频操作: %s",
+            scene.scene_id, scene.stage_name or "-", td, dv, v_op, a_op,
+        )
+    elif has_audio:
         da = scene.assets.audio.duration or 0.0
         if da <= 0:
             raise RuntimeError(
@@ -654,7 +747,13 @@ def _build_subtitle_segments(
     segments: List[tuple[float, float, str]] = []
     cursor = 0.0
     for scene in project.scenes:
-        da = scene.assets.audio.duration or 0.0
+        # V18.0 Pacing Engine:成片中每个分镜的实际时长 = target_duration(若启用),
+        #   否则回退音频时长。字幕必须按成片时长推进,否则会与画面错位漂移。
+        da = (
+            float(scene.target_duration)
+            if (scene.target_duration or 0.0) > 0
+            else (scene.assets.audio.duration or 0.0)
+        )
         text = scene.narration.strip()
         if not text:
             cursor += da
@@ -971,10 +1070,18 @@ def _compose_final_sync(
     transition = settings.TRANSITION_DURATION
 
     # 时长:有配音用音频时长(音画已对齐),无配音用视频原始时长
+    # V18.0 Pacing Engine:只要分镜启用了节奏卡点(target_duration>0),
+    #   统一以 target_duration 为唯一基准——否则 xfade 转场偏移会错位,
+    #   且最终总时长 ≠ 各阶段 target_duration 之和,破坏"严格符合时间轴"。
     if has_voiceover:
-        durations = [s.assets.audio.duration or 0.0 for s in scenes]
+        base_durations = [s.assets.audio.duration or 0.0 for s in scenes]
     else:
-        durations = [s.assets.video_clip.duration or 0.0 for s in scenes]
+        base_durations = [s.assets.video_clip.duration or 0.0 for s in scenes]
+    durations = [
+        (float(s.target_duration) if (s.target_duration or 0.0) > 0
+         else base_durations[i])
+        for i, s in enumerate(scenes)
+    ]
     total_duration = sum(durations)
 
     # ---- 字幕片段预构建(供 drawtext 链) ----

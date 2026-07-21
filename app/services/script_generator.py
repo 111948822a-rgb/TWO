@@ -172,11 +172,22 @@ class ScriptGenerator:
         image_count = (
             len(project.input.image_urls) if project.input.image_urls else 1
         )
+        # V18.0 Pacing Engine:节奏时间轴作为最高优先级硬约束注入 System Prompt
+        rhythm_rules = project.input.rhythm_rules or []
+        if rhythm_rules:
+            logger.info(
+                "[%s] [Pacing Engine] 启用节奏硬约束:%d 个阶段,总时长 %.1fs → %s",
+                project.project_id,
+                len(rhythm_rules),
+                sum(float(s.duration or (s.end_time - s.start_time)) for s in rhythm_rules),
+                " | ".join(f"{s.stage_name}({s.duration:.1f}s)" for s in rhythm_rules),
+            )
         system_prompt = build_script_system_prompt(
             image_count=image_count,
             language=project.input.language,
             visual_style=project.input.visual_style,
             product_material=project.input.product_material,
+            rhythm_rules=rhythm_rules,
         )
         user_prompt = build_script_user_prompt(project.input)
 
@@ -195,20 +206,61 @@ class ScriptGenerator:
                 img_idx = 0
             if img_idx < 0 or (image_count > 1 and img_idx >= image_count):
                 img_idx = 0
+
+            scene_index = item["index"]
+            # V18.0 Pacing Engine:解析 stage_name / target_duration
+            #   优先用 LLM 返回值;缺失或非法时回退到 rhythm_rules 对应 index 的时间轴
+            fallback = (
+                rhythm_rules[scene_index]
+                if rhythm_rules and 0 <= scene_index < len(rhythm_rules)
+                else None
+            )
+            stage_name = str(item.get("stage_name") or (fallback.stage_name if fallback else ""))
+            try:
+                target_duration = float(item.get("target_duration"))
+            except (TypeError, ValueError):
+                target_duration = 0.0
+            if target_duration <= 0 and fallback is not None:
+                target_duration = float(
+                    fallback.duration or (fallback.end_time - fallback.start_time)
+                )
+
             scenes.append(
                 Scene(
-                    scene_id=f"scene_{item['index'] + 1:03d}",
-                    index=item["index"],
+                    scene_id=f"scene_{scene_index + 1:03d}",
+                    index=scene_index,
                     narration=item.get("narration", ""),
                     image_prompt=item.get("image_prompt", ""),
                     video_prompt=item.get("video_prompt", ""),
                     hook_text=item.get("hook_text") or None,
                     image_index=img_idx,
+                    stage_name=stage_name,
+                    target_duration=target_duration,
                 )
             )
 
         if not scenes:
             raise RuntimeError("LLM 未生成任何分镜")
+
+        # V18.0 Pacing Engine:若 LLM 未按时间轴数量生成,强制按 rhythm_rules 补齐/对齐
+        #   保证每个分镜都有可执行的 target_duration(否则 FFmpeg 无法精准卡点)
+        if rhythm_rules:
+            for scene in scenes:
+                if 0 <= scene.index < len(rhythm_rules):
+                    rule = rhythm_rules[scene.index]
+                    if not scene.stage_name:
+                        scene.stage_name = rule.stage_name
+                    if scene.target_duration <= 0:
+                        scene.target_duration = float(
+                            rule.duration or (rule.end_time - rule.start_time)
+                        )
+            aligned = ", ".join(
+                f"[{s.index}]{s.stage_name}={s.target_duration:.1f}s" for s in scenes
+            )
+            logger.info(
+                "[%s] [Pacing Engine] 分镜节奏对齐结果(%d 段): %s",
+                project.project_id, len(scenes), aligned,
+            )
 
         # V16.1:字数兜底,并发扩写所有分镜的 image_prompt 和 video_prompt
         # asyncio.gather 并发执行,总耗时 ≈ 单次扩写耗时(而非 N×单次),不阻塞前端

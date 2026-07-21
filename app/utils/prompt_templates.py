@@ -14,7 +14,9 @@ V16.1 紧急修复:废除 150+ 词超长限制(导致 API Token 超限崩溃),
 
 from __future__ import annotations
 
-from app.schemas.project import ProductInput
+from typing import List, Optional
+
+from app.schemas.project import ProductInput, RhythmStage
 
 # V4.0 市场聚焦:语言代码 → (英文名, 中文名) 供 Prompt 注入(仅 English/Thai/Indonesian)
 LANGUAGE_NAMES: dict[str, tuple[str, str]] = {
@@ -189,11 +191,81 @@ def truncate_prompt_safe(prompt: str, max_words: int = 140) -> str:
     return f"{truncated}, high quality, 8k"
 
 
+# ===========================================================================
+# V18.0 Pacing Engine 爆款节奏把控 — 节奏硬约束 Prompt 构建
+# ===========================================================================
+
+# 口播速率:用于根据 target_duration 估算 narration 合理长度(宁短勿长)
+#   中文按 字/秒,英文/泰文/印尼文按 词/秒
+_SPEAK_RATE_WORDS_PER_SEC: float = 2.3   # 英文/泰文/印尼文 ≈ 2.3 词/秒
+_SPEAK_RATE_CHARS_PER_SEC: float = 4.0   # 中文 ≈ 4 字/秒
+
+
+def build_rhythm_constraint_block(
+    rhythm_rules: List[RhythmStage],
+    language: str = "en",
+) -> str:
+    """V18.0 构建 Pacing Engine 节奏硬约束文本块(注入 System Prompt 最高优先级)。
+
+    将前端下发的"黄金节奏模板"转成对 LLM 的强制指令:分镜数量、顺序、
+    每个分镜的 stage_name / target_duration 必须与时间轴完全一致,narration
+    长度必须能在 target_duration 秒内自然口播完毕(宁短勿长)。
+
+    Args:
+        rhythm_rules: 节奏阶段列表(来自 ProductInput.rhythm_rules)。
+        language: 目标语言,决定 narration 长度按"词"还是按"字"估算。
+
+    Returns:
+        可直接拼入 System Prompt 的中文约束块;rhythm_rules 为空则返回 ""。
+    """
+    if not rhythm_rules:
+        return ""
+
+    n = len(rhythm_rules)
+    is_cjk = language in ("zh", "zh-CN", "cn")
+    lines: list[str] = []
+    for i, stage in enumerate(rhythm_rules):
+        dur = float(stage.duration or (stage.end_time - stage.start_time))
+        if is_cjk:
+            approx = max(2, round(dur * _SPEAK_RATE_CHARS_PER_SEC))
+            len_hint = f"约 {approx} 个字以内"
+        else:
+            approx = max(2, round(dur * _SPEAK_RATE_WORDS_PER_SEC))
+            len_hint = f"about {approx} words max"
+        lines.append(
+            f"  分镜{i} | 阶段名(stage_name):{stage.stage_name} | "
+            f"起止:{stage.start_time:.1f}s-{stage.end_time:.1f}s | "
+            f"目标时长(target_duration):{dur:.1f}s | 旁白长度:{len_hint}"
+        )
+    timeline = "\n".join(lines)
+    total = sum(float(s.duration or (s.end_time - s.start_time)) for s in rhythm_rules)
+
+    return f"""
+【🔴🔴🔴 最高优先级硬约束 — Pacing Engine 爆款节奏时间轴(违反即判定失败,优先级高于下方所有规则)】
+你必须严格按照以下节奏时间轴生成**恰好 {n} 个分镜**(总时长 {total:.1f}s)。
+分镜的数量、顺序、每个分镜的时长都必须与下表**完全一致**,严禁增减分镜、严禁合并、严禁改变顺序:
+{timeline}
+
+【强制字段(每个分镜对象必须额外输出以下两个字段)】
+  - "stage_name": 字符串,该分镜的阶段名,必须与上表对应分镜的 stage_name 完全一致
+  - "target_duration": 浮点数,该分镜的目标时长(秒),必须与上表对应分镜的 target_duration 完全一致
+
+【旁白(narration)时长匹配铁律】
+  - 每个分镜的 narration 必须能在其 target_duration 秒内以自然语速念完
+  - 严格控制长度参照上表每行的"旁白长度"提示,**宁可略短,绝不超长**
+  - 超长的 narration 会导致最终视频卡点失败,这是不可接受的
+  - 黄金钩子(第一个分镜)要短促有冲击力;CTA 引导(最后一个分镜)要干脆有行动号召
+
+本时间轴的分镜数量与时长要求,**优先级高于**下方"【分镜数量】3-4 个分镜"的默认规则,以本时间轴为准。
+"""
+
+
 def build_script_system_prompt(
     image_count: int = 1,
     language: str = "en",
     visual_style: str = "photorealistic",
     product_material: str = "other",
+    rhythm_rules: Optional[List[RhythmStage]] = None,
 ) -> str:
     """构建文案生成的 System Prompt。
 
@@ -209,6 +281,15 @@ def build_script_system_prompt(
     lang_en, lang_zh = LANGUAGE_NAMES.get(language, ("English", "英语"))
     style_desc = VISUAL_STYLE_PROMPTS.get(visual_style, VISUAL_STYLE_PROMPTS["photorealistic"])
     material_desc = MATERIAL_LIGHTING_PROMPTS.get(product_material, MATERIAL_LIGHTING_PROMPTS["other"])
+
+    # V18.0 Pacing Engine:节奏硬约束块 + JSON 分镜额外字段
+    rhythm_block = build_rhythm_constraint_block(rhythm_rules or [], language=language)
+    rhythm_json_fields = (
+        '"stage_name": "节奏阶段名(必须与时间轴一致)",\n      '
+        '"target_duration": 3.0,\n      '
+        if rhythm_rules
+        else ""
+    )
 
     multi_image_clause = ""
     if image_count > 1:
@@ -237,13 +318,14 @@ def build_script_system_prompt(
     {{
       "index": 0,
       {image_index_field}
-      "hook_text": "钩子花字(仅第一个分镜需要,其余分镜留空字符串)",
+      {rhythm_json_fields}"hook_text": "钩子花字(仅第一个分镜需要,其余分镜留空字符串)",
       "narration": "旁白文案",
       "image_prompt": "生图场景描述(静态视觉,70-120 英文词)",
       "video_prompt": "运镜指令(动态与运镜,70-120 英文词)"
     }}
   ]
 }}
+{rhythm_block}
 {multi_image_clause}
 【核心铁律(NEVER violate)】
 **NEVER use short or generic prompts. Every image_prompt and video_prompt MUST be highly descriptive, rich in cinematic terminology, and strictly between 70 and 120 English words. Prompts shorter than 70 words or longer than 120 words will be REJECTED.**
@@ -364,6 +446,24 @@ def build_script_user_prompt(product: ProductInput) -> str:
         else "已上传 1 张产品图。"
     )
     lang_en, lang_zh = LANGUAGE_NAMES.get(product.language, ("English", "英语"))
+
+    # V18.0 Pacing Engine:节奏启用时,分镜数量/时长以时间轴为准,并覆盖默认时长
+    if product.rhythm_rules:
+        n = len(product.rhythm_rules)
+        total = sum(
+            float(s.duration or (s.end_time - s.start_time))
+            for s in product.rhythm_rules
+        )
+        duration_line = f"目标总时长:{total:.0f} 秒(Pacing Engine 节奏时间轴锁定)"
+        scene_count_line = (
+            f"请严格按 JSON 格式输出,并严格遵守 System 中的节奏时间轴硬约束:"
+            f"恰好 {n} 个分镜,每个分镜必须带 stage_name 与 target_duration,"
+            f"且 narration 长度必须能在其 target_duration 秒内念完(宁短勿长)。"
+        )
+    else:
+        duration_line = f"目标时长:{product.duration_target_sec} 秒"
+        scene_count_line = "请严格按 JSON 格式输出,3-4 个分镜。"
+
     return f"""请为以下产品创作带货短视频脚本:
 
 产品名称:{product.product_name}
@@ -371,11 +471,11 @@ def build_script_user_prompt(product: ProductInput) -> str:
 核心卖点:{selling_points}
 目标受众:{product.target_audience or "通用"}
 视频风格:{product.style}
-目标时长:{product.duration_target_sec} 秒
+{duration_line}
 产品图:{image_hint}
 目标语言:{lang_en}({lang_zh}) —— narration(旁白)必须用{lang_en}撰写,image_prompt 和 video_prompt 必须用英文(English)撰写,且每个 prompt 严格 70-120 英文词
 
-请严格按 JSON 格式输出,3-4 个分镜。每个 image_prompt(静态视觉)和 video_prompt(动态运镜)都必须 70-120 英文词,不要超出 120 词以免 API Token 超限。"""
+{scene_count_line}每个 image_prompt(静态视觉)和 video_prompt(动态运镜)都必须 70-120 英文词,不要超出 120 词以免 API Token 超限。"""
 
 
 def truncate_prompt_safe(prompt: str, max_words: int = 140) -> str:

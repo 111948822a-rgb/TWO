@@ -806,16 +806,29 @@
             <input id="targetAudience" type="text" class="input-base" placeholder="请输入目标受众" />
           </div>
 
-          <!-- Duration + Aspect Ratio (同一行) -->
-          <div style="display:flex;gap:12px;margin-bottom:14px;">
-            <div style="flex:0 0 120px;">
-              <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="duration">时长(秒)</label>
-              <input id="duration" type="number" value="15" min="5" max="120" class="input-base" style="width:100%;" />
+          <!-- Aspect Ratio -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="aspect_ratio">视频比例</label>
+            <div id="arPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+          </div>
+
+          <!-- ===== V18.0 Pacing Engine 爆款脚本节奏把控 ===== -->
+          <div id="pacingCard" style="margin-bottom:14px;padding:16px;border-radius:14px;position:relative;
+               background:linear-gradient(135deg, rgba(120,80,255,0.10), rgba(255,90,120,0.10));
+               border:1px solid var(--border-color);overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text-primary);margin:0;">
+                <span style="font-size:16px;">⏱️</span>
+                <span style="background:linear-gradient(90deg,#7850ff,#ff5a78);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">视频节奏与时长</span>
+              </label>
+              <span style="font-size:11px;color:var(--text-muted);padding:2px 8px;border-radius:10px;background:rgba(120,80,255,0.14);">黄金节奏模板 · 强约束卡点</span>
             </div>
-            <div style="flex:1;">
-              <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="aspect_ratio">视频比例</label>
-              <div id="arPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-            </div>
+            <!-- 时长单选 15/30/60 -->
+            <div id="durationPills" style="display:flex;gap:8px;margin-bottom:14px;"></div>
+            <!-- 隐藏字段:兼容既有 duration_target_sec 逻辑 -->
+            <input id="duration" type="hidden" value="15" />
+            <!-- 节奏时间轴可视化 -->
+            <div id="rhythmTimeline"></div>
           </div>
 
           <!-- Image Upload -->
@@ -1538,6 +1551,44 @@ const GenerateModule = {
   directorMode: false,
   directorTaskId: null,
 
+  // ===== V18.0 Pacing Engine 爆款节奏把控 =====
+  selectedDuration: 15,
+  // 每个阶段的视觉样式(emoji + 渐变色),用于时间轴可视化
+  STAGE_STYLES: {
+    '黄金钩子': { emoji: '🪝', grad: 'linear-gradient(135deg,#FF6B6B,#FF8E53)' },
+    '痛点剖析': { emoji: '😖', grad: 'linear-gradient(135deg,#F7971E,#FFD200)' },
+    '核心信息': { emoji: '📦', grad: 'linear-gradient(135deg,#4E65FF,#4FC3F7)' },
+    '实景演示': { emoji: '🖐️', grad: 'linear-gradient(135deg,#11998E,#38EF7D)' },
+    '效果对比': { emoji: '✨', grad: 'linear-gradient(135deg,#8E2DE2,#B06AB3)' },
+    'CTA引导':  { emoji: '🛒', grad: 'linear-gradient(135deg,#EB3349,#F45C43)' },
+  },
+  // 黄金节奏模板(时长严格对齐所选总时长)
+  RHYTHM_TEMPLATES: {
+    15: [
+      { stage_name: '黄金钩子', start_time: 0,  end_time: 3,  duration: 3 },
+      { stage_name: '核心信息', start_time: 3,  end_time: 7,  duration: 4 },
+      { stage_name: '实景演示', start_time: 7,  end_time: 11, duration: 4 },
+      { stage_name: '效果对比', start_time: 11, end_time: 13, duration: 2 },
+      { stage_name: 'CTA引导',  start_time: 13, end_time: 15, duration: 2 },
+    ],
+    30: [
+      { stage_name: '黄金钩子', start_time: 0,  end_time: 3,  duration: 3 },
+      { stage_name: '痛点剖析', start_time: 3,  end_time: 8,  duration: 5 },
+      { stage_name: '核心信息', start_time: 8,  end_time: 14, duration: 6 },
+      { stage_name: '实景演示', start_time: 14, end_time: 24, duration: 10 },
+      { stage_name: '效果对比', start_time: 24, end_time: 27, duration: 3 },
+      { stage_name: 'CTA引导',  start_time: 27, end_time: 30, duration: 3 },
+    ],
+    60: [
+      { stage_name: '黄金钩子', start_time: 0,  end_time: 4,  duration: 4 },
+      { stage_name: '痛点剖析', start_time: 4,  end_time: 12, duration: 8 },
+      { stage_name: '核心信息', start_time: 12, end_time: 24, duration: 12 },
+      { stage_name: '实景演示', start_time: 24, end_time: 46, duration: 22 },
+      { stage_name: '效果对比', start_time: 46, end_time: 54, duration: 8 },
+      { stage_name: 'CTA引导',  start_time: 54, end_time: 60, duration: 6 },
+    ],
+  },
+
   init() {
     this.renderLangPills();
     this.renderVibePills();
@@ -1546,6 +1597,8 @@ const GenerateModule = {
     this.renderMaterialPills();
     this.renderAspectRatioPills();
     this.renderCandidatesPills();
+    this.renderDurationPills();      // V18.0 Pacing Engine
+    this.renderRhythmTimeline();     // V18.0 Pacing Engine
     this.bindEvents();
     this.updateSpecPreview();
     this.loadCloneList();
@@ -1647,6 +1700,89 @@ const GenerateModule = {
       };
       container.appendChild(pill);
     });
+  },
+
+  // ===== V18.0 Pacing Engine：时长单选 15/30/60 =====
+  renderDurationPills() {
+    const container = document.getElementById('durationPills');
+    if (!container) return;
+    const opts = [
+      { v: 15, label: '15s', desc: '快节奏爆款' },
+      { v: 30, label: '30s', desc: '标准种草' },
+      { v: 60, label: '60s', desc: '深度评测' },
+    ];
+    container.innerHTML = '';
+    opts.forEach(o => {
+      const active = this.selectedDuration === o.v;
+      const pill = document.createElement('div');
+      pill.style.cssText = `flex:1;cursor:pointer;text-align:center;padding:10px 8px;border-radius:10px;
+        border:1.5px solid ${active ? 'transparent' : 'var(--border-color)'};
+        background:${active ? 'linear-gradient(135deg,#7850ff,#ff5a78)' : 'var(--bg-secondary,transparent)'};
+        color:${active ? '#fff' : 'var(--text-secondary)'};
+        box-shadow:${active ? '0 4px 14px rgba(120,80,255,0.35)' : 'none'};
+        transition:all .2s;`;
+      pill.innerHTML = `<div style="font-size:16px;font-weight:800;line-height:1.1;">${o.label}</div>
+        <div style="font-size:10px;opacity:.85;margin-top:2px;">${o.desc}</div>`;
+      pill.onclick = () => {
+        this.selectedDuration = o.v;
+        document.getElementById('duration').value = o.v;
+        this.renderDurationPills();
+        this.renderRhythmTimeline();
+        this.updateSpecPreview();
+      };
+      container.appendChild(pill);
+    });
+  },
+
+  // 获取当前所选时长对应的节奏规则(供提交与可视化复用)
+  getRhythmRules() {
+    return this.RHYTHM_TEMPLATES[this.selectedDuration] || this.RHYTHM_TEMPLATES[15];
+  },
+
+  // ===== V18.0 Pacing Engine：渐变色节奏时间轴可视化 =====
+  renderRhythmTimeline() {
+    const container = document.getElementById('rhythmTimeline');
+    if (!container) return;
+    const rules = this.getRhythmRules();
+    const total = rules.reduce((s, r) => s + r.duration, 0) || 1;
+
+    // 1) 顶部比例进度条(各阶段按时长占宽)
+    let bar = `<div style="display:flex;height:34px;border-radius:8px;overflow:hidden;
+      box-shadow:inset 0 0 0 1px var(--border-color);margin-bottom:10px;">`;
+    rules.forEach(r => {
+      const st = this.STAGE_STYLES[r.stage_name] || { emoji: '🎬', grad: 'linear-gradient(135deg,#888,#aaa)' };
+      const w = (r.duration / total * 100).toFixed(2);
+      bar += `<div title="${r.stage_name} ${r.duration}s"
+        style="width:${w}%;background:${st.grad};display:flex;align-items:center;justify-content:center;
+        font-size:13px;position:relative;min-width:0;">
+        <span style="filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));">${st.emoji}</span>
+      </div>`;
+    });
+    bar += `</div>`;
+
+    // 2) 阶段卡片列表(阶段名 + 时间段 + 时长)
+    let cards = `<div style="display:flex;flex-direction:column;gap:6px;">`;
+    rules.forEach((r, i) => {
+      const st = this.STAGE_STYLES[r.stage_name] || { emoji: '🎬', grad: 'linear-gradient(135deg,#888,#aaa)' };
+      cards += `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;
+        background:var(--bg-secondary,rgba(127,127,127,0.06));border:1px solid var(--border-color);">
+        <div style="width:26px;height:26px;border-radius:7px;flex:0 0 26px;background:${st.grad};
+          display:flex;align-items:center;justify-content:center;font-size:14px;">${st.emoji}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:700;color:var(--text-primary);">${i + 1}. ${r.stage_name}</div>
+          <div style="font-size:10.5px;color:var(--text-muted);">${r.start_time}s – ${r.end_time}s</div>
+        </div>
+        <div style="font-size:12px;font-weight:800;
+          background:${st.grad};-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">
+          ${r.duration}s</div>
+      </div>`;
+    });
+    cards += `</div>`;
+
+    container.innerHTML = bar + cards +
+      `<div style="margin-top:8px;font-size:10.5px;color:var(--text-muted);line-height:1.5;">
+        🔒 已锁定 <b>${rules.length}</b> 段黄金节奏(共 ${total}s)。AI 分镜数量、时长与最终剪辑将<b>严格卡点</b>此时间轴。
+      </div>`;
   },
 
   // V11.0 实时规格预览 (V13.0: 增加手机 Mockup 动态屏幕)
@@ -1769,7 +1905,15 @@ const GenerateModule = {
       if (inp.product_name) document.getElementById('productName').value = inp.product_name;
       if (inp.selling_points) document.getElementById('sellingPoints').value = (inp.selling_points || []).join(', ');
       if (inp.target_audience) document.getElementById('targetAudience').value = inp.target_audience || '';
-      if (inp.duration_target_sec) document.getElementById('duration').value = inp.duration_target_sec;
+      if (inp.duration_target_sec) {
+        document.getElementById('duration').value = inp.duration_target_sec;
+        // V18.0 Pacing Engine：回填时长时对齐到最近的节奏模板并刷新时间轴
+        const d = Number(inp.duration_target_sec);
+        this.selectedDuration = [15, 30, 60].reduce(
+          (best, v) => (Math.abs(v - d) < Math.abs(best - d) ? v : best), 15);
+        this.renderDurationPills();
+        this.renderRhythmTimeline();
+      }
       this.updateSpecPreview();
       showToast(this.t('clone_btn') + ' ✅');
     } catch (e) {
@@ -1961,6 +2105,9 @@ const GenerateModule = {
     this.selectedLangs.forEach(l => formData.append('languages', l));
     this.selectedVibes.forEach(v => formData.append('vibes', v));
     formData.append('scripts_per_combo', document.getElementById('scriptsPerCombo').value);
+    // V18.0 Pacing Engine：总时长 + 节奏时间轴(JSON 字符串)
+    formData.append('total_duration', String(this.selectedDuration));
+    formData.append('rhythm_rules', JSON.stringify(this.getRhythmRules()));
 
     const imageUrl = document.getElementById('imageUrl').value.trim();
     if (this.uploadedFiles.length === 0 && !imageUrl) { alert(this.t('err_no_image')); return; }
@@ -2004,6 +2151,9 @@ const GenerateModule = {
     formData.append('language', this.selectedLangs[0]);
     formData.append('vibe', this.selectedVibes[0]);
     formData.append('candidates_per_scene', String(this.candidatesPerScene));
+    // V18.0 Pacing Engine：总时长 + 节奏时间轴(JSON 字符串)
+    formData.append('total_duration', String(this.selectedDuration));
+    formData.append('rhythm_rules', JSON.stringify(this.getRhythmRules()));
 
     const imageUrl = document.getElementById('imageUrl').value.trim();
     if (this.uploadedFiles.length === 0 && !imageUrl) { alert(this.t('err_no_image')); return; }

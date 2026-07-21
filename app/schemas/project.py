@@ -64,6 +64,22 @@ class SceneStatus(str, Enum):
 # 输入与配置
 # ---------------------------------------------------------------------------
 
+class RhythmStage(BaseModel):
+    """节奏时间轴单个阶段(Pacing Engine 爆款节奏把控引擎)。
+
+    由前端"黄金节奏模板"生成,作为最高优先级硬约束下发到 LLM 与 FFmpeg:
+      - LLM 阶段:强制每个分镜的 stage_name / target_duration 与本表一致
+      - FFmpeg 阶段:按 target_duration 精准裁剪 / 变速,确保成片严格卡点
+    """
+
+    stage_name: str = Field(
+        "", description="阶段名称(黄金钩子/核心信息/实景演示/效果对比/CTA引导)"
+    )
+    start_time: float = Field(0.0, ge=0.0, description="阶段起始时间(秒)")
+    end_time: float = Field(0.0, ge=0.0, description="阶段结束时间(秒)")
+    duration: float = Field(0.0, ge=0.0, description="阶段时长(秒)")
+
+
 class ProductInput(BaseModel):
     """产品输入信息,由用户在创建项目时提供。"""
 
@@ -113,6 +129,16 @@ class ProductInput(BaseModel):
     reference_video_url: Optional[str] = Field(None, description="参考视频公网 URL(拍同款模式)")
     # V15.0 拍同款:是否为克隆模式(用 Qwen-VL 分析参考视频提取分镜,替代 LLM 生成脚本)
     clone_mode: bool = Field(False, description="是否为拍同款模式")
+    # V18.0 Pacing Engine 爆款节奏把控:总时长 + 黄金节奏模板时间轴
+    #   total_duration 与 duration_target_sec 语义一致,新增以对齐前端字段名;
+    #   rhythm_rules 非空时启用节奏硬约束(LLM 分镜数/时长 + FFmpeg 精准卡点)。
+    total_duration: int = Field(
+        15, ge=5, le=120, description="Pacing Engine 目标总时长(秒:15/30/60)"
+    )
+    rhythm_rules: List[RhythmStage] = Field(
+        default_factory=list,
+        description="节奏时间轴规则(Pacing Engine 黄金节奏模板,为空则不启用硬约束)",
+    )
 
     def get_image_url(self, index: int | None = None) -> str:
         """按索引取产品图 URL。image_urls 非空则按索引取,否则回退主图。"""
@@ -214,6 +240,14 @@ class Scene(BaseModel):
     image_index: int = Field(0, ge=0, description="该分镜使用的产品图索引")
     # V7.0 导演模式:分镜级视觉风格覆盖(为 None 时使用全局 project.input.visual_style)
     visual_style: Optional[str] = Field(None, description="分镜级视觉风格覆盖(photorealistic/3d_render/anime/cyberpunk)")
+    # V18.0 Pacing Engine 爆款节奏把控:节奏阶段名 + 目标时长(硬约束)+ 实际素材时长
+    #   stage_name/target_duration 由 rhythm_rules 强制注入 LLM 并回填;
+    #   actual_video_duration 在 stage_video_gen 后记录,供 FFmpeg 精准卡点对齐。
+    stage_name: str = Field("", description="节奏阶段名称(Pacing Engine,如 黄金钩子/CTA引导)")
+    target_duration: float = Field(0.0, ge=0.0, description="节奏目标时长(秒,Pacing Engine 硬约束)")
+    actual_video_duration: Optional[float] = Field(
+        None, description="实际生成视频素材时长(秒,供 FFmpeg 对齐)"
+    )
     status: SceneStatus = SceneStatus.PENDING
     assets: SceneAssets = Field(default_factory=SceneAssets)
     # V9.0 Director Mode Pro: 候选池(每分镜多张图/多个视频供用户选择)

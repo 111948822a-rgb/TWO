@@ -277,6 +277,29 @@ async def stage_video_gen(project: VideoProject) -> None:
 
     failed = [s for s in project.scenes if s.status == SceneStatus.FAILED]
     succeeded = [s for s in project.scenes if s.status == SceneStatus.VID_DONE]
+
+    # V18.0 Pacing Engine:记录每个分镜"实际素材时长",供 FFmpeg 精准卡点对齐。
+    #   HappyHorse 1.1 通常固定输出约 5s 片段;若 provider 未回填 duration,
+    #   则以固定 5.0s 兜底(与引擎默认时长一致)。
+    HAPPYHORSE_DEFAULT_DURATION = 5.0
+    for scene in project.scenes:
+        vc = scene.assets.video_clip
+        actual = vc.duration if (vc and vc.duration and vc.duration > 0) else HAPPYHORSE_DEFAULT_DURATION
+        scene.actual_video_duration = round(float(actual), 2)
+        if scene.target_duration and scene.target_duration > 0:
+            logger.info(
+                "[%s] [Pacing Engine] 分镜 %s(%s) 素材时长记录:实际=%.1fs, 节奏目标=%.1fs%s",
+                project.project_id, scene.scene_id,
+                scene.stage_name or "-", scene.actual_video_duration,
+                scene.target_duration,
+                "" if scene.status == SceneStatus.VID_DONE else " (视频生成失败,以引擎默认时长兜底,合成阶段将降级对齐)",
+            )
+        else:
+            logger.info(
+                "[%s] 分镜 %s 素材时长记录:实际=%.1fs",
+                project.project_id, scene.scene_id, scene.actual_video_duration,
+            )
+
     if failed:
         details = " | ".join(
             f"[{s.scene_id}] {s.error or '未知错误'}" for s in failed
@@ -404,6 +427,24 @@ async def stage_audio_gen(project: VideoProject) -> None:
             logger.info(
                 "[TTS] 单分镜 %s 配音完成(耗时 %.1fs)", scene.scene_id, elapsed
             )
+            # V18.0 Pacing Engine:预检配音时长与节奏目标的偏差,提示后续 FFmpeg 变速对齐
+            #   真正的精准 atempo(加速/补静音)在 compositor 阶段按 target_duration 执行
+            ad = scene.assets.audio.duration if (scene.assets and scene.assets.audio) else None
+            if scene.target_duration and scene.target_duration > 0 and ad and ad > 0:
+                if ad > scene.target_duration + 0.05:
+                    ratio = ad / scene.target_duration
+                    logger.info(
+                        "[TTS] [Pacing Engine] 分镜 %s(%s) 配音偏长:配音=%.1fs > 目标=%.1fs,"
+                        "FFmpeg 将以 atempo≈%.2f 加速对齐",
+                        scene.scene_id, scene.stage_name or "-", ad,
+                        scene.target_duration, min(ratio, 2.0),
+                    )
+                elif ad < scene.target_duration - 0.05:
+                    logger.info(
+                        "[TTS] [Pacing Engine] 分镜 %s(%s) 配音偏短:配音=%.1fs < 目标=%.1fs,"
+                        "FFmpeg 将补静音对齐",
+                        scene.scene_id, scene.stage_name or "-", ad, scene.target_duration,
+                    )
         except (asyncio.TimeoutError, TimeoutError):
             # Python 3.10 中 asyncio.TimeoutError 与内置 TimeoutError 是不同类,
             # 必须同时捕获两者,确保超时一定能走降级而非冒泡中断流水线

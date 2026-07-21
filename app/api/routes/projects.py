@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import json
 import logging
 import uuid
 import zipfile
@@ -155,6 +156,59 @@ def _parse_selling_points(selling_points: str) -> List[str]:
     ]
 
 
+def _parse_rhythm_rules(rhythm_rules_raw: str) -> List[Dict]:
+    """V18.0 Pacing Engine:解析前端下发的节奏时间轴 JSON 字符串。
+
+    前端以 JSON 字符串提交 rhythm_rules(每段含 stage_name/start_time/
+    end_time/duration)。此处做鲁棒解析与字段归一,返回可直接填入
+    ProductInput.rhythm_rules 的 dict 列表;解析失败/为空时返回 []。
+
+    Args:
+        rhythm_rules_raw: 前端提交的 JSON 字符串(可能为空)。
+
+    Returns:
+        规范化后的节奏阶段 dict 列表(非法则为空列表,不启用硬约束)。
+    """
+    raw = (rhythm_rules_raw or "").strip()
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("[Pacing Engine] rhythm_rules 解析失败(非法 JSON),已忽略: %.120s", raw)
+        return []
+    if not isinstance(data, list):
+        logger.warning("[Pacing Engine] rhythm_rules 非数组,已忽略")
+        return []
+
+    stages: List[Dict] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = float(item.get("start_time", 0) or 0)
+            end = float(item.get("end_time", 0) or 0)
+            dur = float(item.get("duration", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if dur <= 0:
+            dur = max(0.0, end - start)
+        if end <= 0:
+            end = start + dur
+        stages.append({
+            "stage_name": str(item.get("stage_name", "")).strip(),
+            "start_time": round(start, 2),
+            "end_time": round(end, 2),
+            "duration": round(dur, 2),
+        })
+    if stages:
+        logger.info(
+            "[Pacing Engine] 已解析节奏时间轴:%d 段,总时长 %.1fs",
+            len(stages), sum(s["duration"] for s in stages),
+        )
+    return stages
+
+
 async def _run_safe(
     project: VideoProject,
     from_stage: Optional[ProjectStatus] = None,
@@ -250,6 +304,8 @@ async def create_project(
     defringe_strength: str = Form("medium"),
     aspect_ratio: str = Form("9:16"),
     product_material: str = Form("other"),
+    total_duration: int = Form(0),
+    rhythm_rules: str = Form(""),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
     current_user: dict = Depends(get_current_user),
@@ -257,8 +313,14 @@ async def create_project(
     """创建视频生成任务,异步触发 5 阶段流水线,返回 task_id。
 
     V17.0: 标记 creator_name(当前登录用户的显示名), 便于全员共享历史下追溯创建者。
+    V18.0 Pacing Engine: 接收 total_duration + rhythm_rules(节奏时间轴 JSON),
+        作为最高优先级硬约束贯穿 LLM 脚本生成与 FFmpeg 精准卡点。
     """
     task_id = uuid.uuid4().hex[:12]
+
+    # V18.0 Pacing Engine:解析节奏时间轴;total_duration 优先,回退 duration_target_sec
+    parsed_rhythm = _parse_rhythm_rules(rhythm_rules)
+    effective_total = total_duration if total_duration and total_duration > 0 else duration_target_sec
 
     white_image_url = (image_url or "").strip()
     image_urls: List[str] = []
@@ -293,7 +355,7 @@ async def create_project(
             "target_audience": target_audience,
             "white_image_url": white_image_url,
             "image_urls": image_urls,
-            "duration_target_sec": duration_target_sec,
+            "duration_target_sec": effective_total,
             "style": style,
             "language": language,
             "enable_voiceover": enable_voiceover,
@@ -302,10 +364,18 @@ async def create_project(
             "defringe_strength": defringe_strength,
             "aspect_ratio": aspect_ratio,
             "product_material": product_material,
+            "total_duration": effective_total,
+            "rhythm_rules": parsed_rhythm,
         },
     )
     sync_project_from_model(project, creator_name=current_user["display_name"])
     _spawn_task(task_id, _run_safe(project))
+
+    if parsed_rhythm:
+        logger.info(
+            "[%s] [Pacing Engine] 已启用节奏硬约束:总时长=%ds, %d 段时间轴",
+            task_id, effective_total, len(parsed_rhythm),
+        )
 
     logger.info(
         "[%s] 任务已创建, 主图=%s, 多图=%d 张",
@@ -333,6 +403,8 @@ async def create_batch(
     defringe_strength: str = Form("medium"),
     aspect_ratio: str = Form("9:16"),
     product_material: str = Form("other"),
+    total_duration: int = Form(0),
+    rhythm_rules: str = Form(""),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
     current_user: dict = Depends(get_current_user),
@@ -420,6 +492,15 @@ async def create_batch(
 
     sp = _parse_selling_points(selling_points)
 
+    # V18.0 Pacing Engine:解析节奏时间轴(整批共享同一时间轴)
+    parsed_rhythm = _parse_rhythm_rules(rhythm_rules)
+    effective_total = total_duration if total_duration and total_duration > 0 else duration_target_sec
+    if parsed_rhythm:
+        logger.info(
+            "[%s] [Pacing Engine] 批量任务启用节奏硬约束:总时长=%ds, %d 段时间轴",
+            batch_id, effective_total, len(parsed_rhythm),
+        )
+
     # 笛卡尔积:languages × vibes × scripts_per_combo
     # V13.0: 每个子任务创建用 try/except 包裹,失败则跳过不返回假 ID
     combos: List[Dict] = []
@@ -439,7 +520,7 @@ async def create_batch(
                             "target_audience": target_audience,
                             "white_image_url": white_image_url,
                             "image_urls": image_urls,
-                            "duration_target_sec": duration_target_sec,
+                            "duration_target_sec": effective_total,
                             "style": style,
                             "language": lang,
                             "enable_voiceover": enable_voiceover,
@@ -448,6 +529,8 @@ async def create_batch(
                             "defringe_strength": defringe_strength,
                             "aspect_ratio": aspect_ratio,
                             "product_material": product_material,
+                            "total_duration": effective_total,
+                            "rhythm_rules": parsed_rhythm,
                         },
                     )
                     batch_projects.append(project)
@@ -699,6 +782,8 @@ async def generate_script(
     aspect_ratio: str = Form("9:16"),
     product_material: str = Form("other"),
     candidates_per_scene: int = Form(1),
+    total_duration: int = Form(0),
+    rhythm_rules: str = Form(""),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
     current_user: dict = Depends(get_current_user),
@@ -736,6 +821,10 @@ async def generate_script(
 
     sp = _parse_selling_points(selling_points)
 
+    # V18.0 Pacing Engine:解析节奏时间轴(导演模式同样支持)
+    parsed_rhythm = _parse_rhythm_rules(rhythm_rules)
+    effective_total = total_duration if total_duration and total_duration > 0 else duration_target_sec
+
     project = VideoProject(
         project_id=task_id,
         input={
@@ -745,7 +834,7 @@ async def generate_script(
             "target_audience": target_audience,
             "white_image_url": white_image_url,
             "image_urls": image_urls,
-            "duration_target_sec": duration_target_sec,
+            "duration_target_sec": effective_total,
             "style": style,
             "language": language,
             "enable_voiceover": enable_voiceover,
@@ -754,6 +843,8 @@ async def generate_script(
             "defringe_strength": defringe_strength,
             "aspect_ratio": aspect_ratio,
             "product_material": product_material,
+            "total_duration": effective_total,
+            "rhythm_rules": parsed_rhythm,
         },
         config={"candidates_per_scene": max(1, min(3, candidates_per_scene))},
     )
