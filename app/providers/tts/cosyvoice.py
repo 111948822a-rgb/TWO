@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import httpx
@@ -92,7 +93,12 @@ class CosyVoiceProvider(ITTSProvider):
         )
 
     async def _request_tts(self, text: str, voice: str) -> str:
-        """调用非实时 TTS API,返回音频文件 URL。"""
+        """调用非实时 TTS API,返回音频文件 URL。
+
+        关键诊断加固: 任何非 200 响应都打印完整响应体(含 DashScope 的
+        code/message,如 Arrearage 欠费 / InvalidParameter / QuotaExhausted),
+        不再被 resp.raise_for_status() 默认的简短信息吞掉真实死因。
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -106,27 +112,108 @@ class CosyVoiceProvider(ITTSProvider):
             },
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(TTS_URL, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+            try:
+                resp = await client.post(TTS_URL, headers=headers, json=payload)
+            except httpx.HTTPError as exc:
+                logger.error(
+                    "[TTS] ❌ 调用 API 网络异常: %s", exc
+                )
+                raise
+
+            status_code = resp.status_code
+            body_text = resp.text or ""
+            if status_code != 200:
+                # 尝试解析业务错误码,便于用户直接看到欠费/配额等根因
+                biz_code = ""
+                try:
+                    err_json = resp.json()
+                    biz_code = str(
+                        err_json.get("code")
+                        or err_json.get("message")
+                        or err_json.get("error", {}).get("message")
+                        or ""
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                logger.error(
+                    "[TTS] 调用 API 返回状态: %s, 业务错误码: %s, "
+                    "响应内容: %s",
+                    status_code, biz_code, body_text[:2000],
+                )
+                raise RuntimeError(
+                    f"[TTS] 调用 API 返回状态 {status_code}"
+                    f"{(' 业务错误: ' + biz_code) if biz_code else ''}"
+                    f", 响应内容: {body_text[:1000]}"
+                ) from None
+
+            try:
+                data = resp.json()
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "[TTS] ❌ API 返回非 JSON 响应: %s", body_text[:1000]
+                )
+                raise RuntimeError(
+                    f"[TTS] API 返回无法解析的响应: {body_text[:1000]}"
+                ) from exc
 
         audio = data.get("output", {}).get("audio", {})
         url = audio.get("url")
         if not url:
+            logger.error(
+                "[TTS] ❌ 未返回音频 URL, 完整响应: %s", body_text[:2000]
+            )
             raise RuntimeError(
-                f"CosyVoice 合成失败,未返回音频 URL: {data}"
+                f"[TTS] CosyVoice 合成失败,未返回音频 URL: {body_text[:1000]}"
             )
         return url
 
     async def _download_audio(
         self, audio_url: str, output_path: str
     ) -> str:
-        """下载音频文件到本地。"""
+        """下载音频文件到本地,并强制做落盘自检。
+
+        落盘自检(核心): 写入后必须用 os.path.exists + os.path.getsize
+        确认文件真实存在且大小 > 0。空文件/保存失败一律抛明确异常,
+        避免把 0 字节或损坏的 mp3 带进合成阶段。
+        """
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(audio_url)
-            resp.raise_for_status()
-            Path(output_path).write_bytes(resp.content)
+            if resp.status_code != 200:
+                logger.error(
+                    "[TTS] ❌ 下载音频返回状态: %s, 响应内容: %s",
+                    resp.status_code, (resp.text or "")[:500],
+                )
+                raise RuntimeError(
+                    f"[TTS] 下载音频失败, HTTP {resp.status_code}"
+                )
+            content = resp.content or b""
+            if len(content) == 0:
+                logger.error(
+                    "[TTS] ❌ 下载音频内容为空(HTTP %s): %s",
+                    resp.status_code, audio_url,
+                )
+                raise RuntimeError(f"[TTS] 下载音频内容为空: {audio_url}")
+            Path(output_path).write_bytes(content)
+
+        # ---- 落盘自检 ----
+        if not os.path.exists(output_path):
+            raise RuntimeError(
+                f"[TTS] ❌ 音频文件保存失败或为空: {output_path}"
+            )
+        size = os.path.getsize(output_path)
+        if size == 0:
+            try:
+                os.remove(output_path)
+            except OSError:
+                pass
+            raise RuntimeError(
+                f"[TTS] ❌ 音频文件保存失败或为空(0 字节): {output_path}"
+            )
+        logger.info(
+            "[TTS] ✅ 音频文件成功落盘: %s, 大小: %d bytes",
+            output_path, size,
+        )
         return output_path
 
     @staticmethod

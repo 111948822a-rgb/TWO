@@ -372,11 +372,30 @@ async def stage_audio_gen(project: VideoProject) -> None:
     )
 
     async def _process_audio(scene: Scene) -> None:
-        """单分镜配音生成:调 CosyVoice,返回 mp3 + 精确 duration。"""
-        audio_gen = AudioGenerator()
-        await audio_gen.generate_for_scene(scene, voice=voice)
-        scene.status = SceneStatus.AUDIO_DONE
-        logger.info("  [%s] 配音生成完成", scene.scene_id)
+        """单分镜配音生成:调 CosyVoice,返回 mp3 + 精确 duration。
+
+        V-TTS-HARDEN: 配音阶段不再因单个分镜 TTS 失败而中断整条流水线。
+        捕获 TTS 异常后将该分镜 audio.local_path 置 None 并继续,后续合成阶段
+        (stage_compositing) 会自动过滤无音频分镜或降级为纯 BGM 无旁白模式,
+        确保视频依然能产出,不再"卡在 AI 配音阶段无法继续"。
+        """
+        try:
+            audio_gen = AudioGenerator()
+            await audio_gen.generate_for_scene(scene, voice=voice)
+            scene.status = SceneStatus.AUDIO_DONE
+            logger.info("  [%s] 配音生成完成", scene.scene_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "  [%s] 配音生成失败,降级为无配音(视频仍合成): %s",
+                scene.scene_id, exc,
+            )
+            # 清除可能残留的音频信息,避免合成阶段误用半成品
+            if scene.assets and scene.assets.audio:
+                scene.assets.audio.local_path = None
+                scene.assets.audio.duration = None
+            # 标记为配音阶段已处理(仅缺配音),不把整个分镜标 FAILED,
+            # 否则合成阶段会按"无效分镜"将其排除,丢失该分镜的视频
+            scene.status = SceneStatus.AUDIO_DONE
 
     await _run_scenes_concurrent(
         project, _process_audio, ProjectStatus.AUDIO_GEN, "音频生成"
