@@ -262,6 +262,26 @@ def sync_project_from_model(
         logger.error("[DB] 同步项目失败 %s: %s", getattr(project, "project_id", "?"), exc)
 
 
+def _utc_iso_z(value):
+    """将数据库中的裸 UTC 时间字符串规范化为带 'Z' 的 ISO 8601, 供前端按 UTC 正确解析。
+
+    后端全程用 datetime.utcnow() 存储, 但 .isoformat() 不带时区; 前端 new Date(裸串)
+    在 UTC+8 环境下会被当作本地时间解析, 导致"已耗时 / 预计剩余"偏差 8 小时。补 'Z'
+    即声明其为 UTC。已是带时区(含 Z / +hh:mm)或空值则原样返回(向后兼容旧数据)。
+    """
+    if not isinstance(value, str):
+        return value
+    s = value.strip()
+    if not s or s[-1] in ('Z', 'z'):
+        return value
+    # 已带时区偏移(如 +08:00 / +0800 / -05:00)
+    if ('+' in s[10:]) or (s[10:].startswith('-') and 'T' in s):
+        return value
+    if 'T' in s:
+        return s + 'Z'
+    return value
+
+
 def list_projects(page: int = 1, size: int = 20) -> dict:
     """分页返回项目列表(不含 scenes_data)。"""
     offset = (page - 1) * size
@@ -278,11 +298,19 @@ def list_projects(page: int = 1, size: int = 20) -> dict:
             """,
             (size, offset),
         ).fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        # 时间字段补 'Z', 统一为带时区的 ISO 8601, 修复前端 8 小时时区偏差
+        for _k in ("started_at", "completed_at", "created_at"):
+            if _k in d:
+                d[_k] = _utc_iso_z(d[_k])
+        items.append(d)
     return {
         "total": total,
         "page": page,
         "size": size,
-        "items": [dict(r) for r in rows],
+        "items": items,
     }
 
 
@@ -296,6 +324,10 @@ def get_project_detail(task_id: str) -> Optional[dict]:
     if not row:
         return None
     result = dict(row)
+    # 时间字段补 'Z', 统一为带时区的 ISO 8601, 修复前端 8 小时时区偏差
+    for _k in ("started_at", "completed_at", "created_at"):
+        if _k in result:
+            result[_k] = _utc_iso_z(result[_k])
     try:
         result["scenes_data"] = json.loads(result.get("scenes_data") or "{}")
     except (json.JSONDecodeError, TypeError):

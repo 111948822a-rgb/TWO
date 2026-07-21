@@ -2972,20 +2972,23 @@ const QueueModule = {
       ? `<div style="margin-top:10px;padding:8px 10px;background:rgba(239,68,68,0.1);border-radius:8px;border:1px solid rgba(239,68,68,0.3);"><p style="font-size:11px;color:var(--danger-color);margin:0;word-break:break-word;white-space:pre-wrap;">⚠️ ${esc((item.error_message || '').slice(0, 400))}</p></div>`
       : '';
 
-    // V17.3: 时间维度(已耗时 / 预计剩余)
+    // V17.3: 时间维度(已耗时 / 预计剩余) —— 统一用毫秒时间戳计算, 规避时区 8 小时偏差
     const startIso = item.started_at || item.created_at;
-    const startTs = startIso ? new Date(startIso).getTime() : '';
+    const startTs = parseTimeMs(startIso);
+    const startTsAttr = (!isNaN(startTs) && startTs) ? startTs : '';
     const etaMap = { pending:30, scripting:30, img_gen:60, vid_gen:120, audio_gen:30, compositing:30, awaiting_selection:0, completed:0, failed:0 };
     const etaSec = etaMap[item.status] || 0;
     let elapsedSec = null, frozen = false;
     if (item.status === 'completed' || item.status === 'failed') {
+      // 终态: 冻结时间, 直接用 completed_at - started_at 显示最终总耗时, 不再跳动
       frozen = true;
-      if (startTs && item.completed_at) {
-        elapsedSec = (new Date(item.completed_at).getTime() - startTs) / 1000;
-      } else if (startTs) {
+      const endTs = parseTimeMs(item.completed_at);
+      if (!isNaN(startTs) && !isNaN(endTs)) {
+        elapsedSec = (endTs - startTs) / 1000;
+      } else if (!isNaN(startTs)) {
         elapsedSec = (Date.now() - startTs) / 1000;
       }
-    } else if (startTs) {
+    } else if (!isNaN(startTs)) {
       elapsedSec = (Date.now() - startTs) / 1000;
     }
     const elapsedText = fmtClock(elapsedSec);
@@ -3006,8 +3009,8 @@ const QueueModule = {
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
           <div style="display:flex;gap:16px;font-size:12px;color:var(--text-muted);">
-            <span>⏱️ 已耗时: <b class="q-elapsed" data-start-ts="${startTs}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${elapsedText}</b></span>
-            <span>⏳ 预计剩余: <b class="q-eta" data-start-ts="${startTs}" data-eta="${etaSec}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${etaText}</b></span>
+            <span>⏱️ 已耗时: <b class="q-elapsed" data-start-ts="${startTsAttr}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${elapsedText}</b></span>
+            <span>⏳ 预计剩余: <b class="q-eta" data-start-ts="${startTsAttr}" data-eta="${etaSec}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${etaText}</b></span>
           </div>
           <span class="pct-text" style="font-size:13px;font-weight:600;color:var(--accent-color);">${pct}%</span>
         </div>
@@ -3806,6 +3809,28 @@ function fmtClock(sec) {
   return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
+// V17.X: 将后端时间统一解析为毫秒时间戳, 彻底规避时区导致的 8 小时偏差:
+//  - 数字: 视为 Unix 时间戳(秒 / 毫秒自动判断)
+//  - 字符串: 带时区(Z / +hh:mm)直接解析; 裸 ISO(如 2026-07-21T02:00:00)按 UTC 解析(补 Z)
+//  解析失败返回 NaN(调用方按"无起点"处理)
+function parseTimeMs(value) {
+  if (value === null || value === undefined || value === '') return NaN;
+  if (typeof value === 'number') {
+    return value < 1e12 ? value * 1000 : value;
+  }
+  const s = String(value).trim();
+  if (!s) return NaN;
+  if (/[zZ]$/.test(s) || /[+\-]\d{2}:?\d{2}$/.test(s)) {
+    const t = new Date(s).getTime();
+    if (!isNaN(t)) return t;
+  }
+  if (s.indexOf('T') !== -1) {
+    const t = new Date(s + 'Z').getTime();
+    if (!isNaN(t)) return t;
+  }
+  return new Date(s).getTime();
+}
+
 // V17.3: 每秒仅更新 Queue 卡片上的耗时/剩余文本节点(无重绘闪烁)
 function tickQueueTimers() {
  try {
@@ -3821,8 +3846,9 @@ function tickQueueTimers() {
     const eta = parseInt(el.dataset.eta, 10);
     if (isNaN(eta)) return;
     if (!ts) { el.textContent = fmtClock(eta); return; }
-    const rem = Math.max(0, eta - (Date.now() - ts) / 1000);
-    el.textContent = fmtClock(rem);
+    const rem = eta - (Date.now() - ts) / 1000;
+    // ETA 不会出现负数: 剩余 <= 0 强制显示"即将完成"(终态卡片因 data-frozen 已被跳过)
+    el.textContent = rem <= 0 ? '即将完成' : fmtClock(rem);
   });
  } catch (e) { console.error('[tickQueueTimers]', e); }
 }
@@ -3841,7 +3867,9 @@ const AuthModule = {
       const resp = await fetch('/api/auth/me', { credentials: 'same-origin' });
       if (resp.ok) {
         const user = await resp.json();
-        this.onAuthenticated(user, false);
+        // 自动登录成功: 必须走 runInit=true, 确保 initApp() 绑定全局 UI 事件(导航/弹窗),
+        // 否则用户刷新页面后会看到主界面但按钮/导航点不动("假死")。
+        this.onAuthenticated(user, true);
         return;
       }
     } catch (e) { /* 网络异常, 落回登录页 */ }
@@ -4003,16 +4031,11 @@ const AuthModule = {
   },
 };
 
-// 登录成功后执行的应用初始化(原 DOMContentLoaded 内容收敛于此)
-function initApp() {
-  // 防雪崩: 每个模块的初始化独立 try/catch, 单个模块异常不影响其余模块与全局导航的点击事件
-  const safe = (name, fn) => { try { fn(); } catch (e) { console.error('[init] ' + name + ' 初始化失败(已隔离,不影响其他功能):', e); } };
-  safe('GenerateModule.init', () => GenerateModule.init());
-  safe('ProductsModule.bindEvents', () => ProductsModule.bindEvents());
-  safe('GenerateModule.loadProducts', () => GenerateModule.loadProducts());
-  safe('AgentModule.init', () => AgentModule.init());
-  safe('DashboardModule.load', () => DashboardModule.load());
-
+// 全局 UI 交互事件绑定(跨模块的全局控件: 引导卡片 / 抽屉 / 候选弹窗 / 队列刷新)。
+// 说明: 左侧导航栏 switchView 的绑定在各模块 bindEvents 内(由 initApp -> GenerateModule.init 触发),
+//       此处只负责上述跨模块控件。无论自动登录还是手动登录, 都会经由
+//       AuthModule._initApp -> initApp -> initAppUI 触发, 故自动登录后 UI 一定可用, 不会"假死"。
+function initAppUI() {
   // V11.0 AI 导演引导卡片点击
   const guideCard = document.getElementById('agentGuideCard');
   if (guideCard) guideCard.addEventListener('click', () => switchView('agent'));
@@ -4040,6 +4063,21 @@ function initApp() {
   // V9.0: Queue refresh button
   const queueRefresh = document.getElementById('queueRefresh');
   if (queueRefresh) queueRefresh.addEventListener('click', () => QueueModule.poll());
+}
+
+// 登录成功后执行的应用初始化(原 DOMContentLoaded 内容收敛于此)
+function initApp() {
+  // 防雪崩: 每个模块的初始化独立 try/catch, 单个模块异常不影响其余模块与全局导航的点击事件
+  const safe = (name, fn) => { try { fn(); } catch (e) { console.error('[init] ' + name + ' 初始化失败(已隔离,不影响其他功能):', e); } };
+  safe('GenerateModule.init', () => GenerateModule.init());
+  safe('ProductsModule.bindEvents', () => ProductsModule.bindEvents());
+  safe('GenerateModule.loadProducts', () => GenerateModule.loadProducts());
+  safe('AgentModule.init', () => AgentModule.init());
+  safe('DashboardModule.load', () => DashboardModule.load());
+
+  // 全局 UI 事件绑定(导航由上方模块 init 完成, 此处补齐跨模块控件):
+  // 自动登录与手动登录都会走到此处, 保证 UI 交互全部就绪
+  initAppUI();
 }
 </script>
 </body>
