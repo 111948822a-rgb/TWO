@@ -244,6 +244,86 @@ def _assert_inputs_nonempty(
     logger.info("[Compositor] ✅ 全部 %d 个输入文件自检通过", len(labeled_paths))
 
 
+# ---------------------------------------------------------------------------
+# 统一 FFmpeg 执行器(终极防卡死封装)
+# ---------------------------------------------------------------------------
+
+def _run_ffmpeg_cmd(
+    cmd_args: List[str], level_name: str, timeout: float = 300
+) -> "subprocess.CompletedProcess":
+    """统一执行任意 FFmpeg 命令,彻底根除"静默卡死"。
+
+    强制做到四件事:
+      1. -y 覆盖符:若命令中未显式含 -y,自动插入,防止 FFmpeg 等待
+         用户确认覆盖而永远卡死。
+      2. stdin=DEVNULL:FFmpeg 默认会打开 stdin 监听 'q' 退出键,若 stdin
+         连着未关闭的管道(常见于 subprocess 继承父进程 fd),它会永久阻塞
+         等待输入 —— 这是云端"静默卡死"的头号元凶。置 DEVNULL 彻底禁用。
+      3. timeout:超时强制 kill 子进程并抛异常,杜绝任何无界等待。
+      4. 全景日志 + 完整 stderr:执行前打印完整命令,失败/超时打印完整 stderr。
+
+    Returns:
+        执行成功的 CompletedProcess(returncode==0)。
+    Raises:
+        RuntimeError:超时或退出码非 0(携带完整命令与 stderr 末段)。
+    """
+    args = list(cmd_args)
+    # 强制 -y(ffmpeg-python 的 overwrite_output=True 已加则重复无害)
+    if args and args[0].endswith("ffmpeg"):
+        if "-y" not in args:
+            args.insert(1, "-y")
+    cmd_str = " ".join(args)
+    logger.info("[Compositor][%s] FFmpeg 完整命令:\n%s", level_name, cmd_str)
+
+    try:
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stderr = (exc.stderr or b"").decode("utf-8", errors="replace")
+        logger.error(
+            "[Compositor][%s] ❌ FFmpeg 执行超时(%ds)已被强制终止!\n"
+            "完整命令:\n%s\n==== stderr 末段 ====\n%s",
+            level_name, int(timeout), cmd_str, stderr[-2000:],
+        )
+        raise RuntimeError(
+            f"[{level_name}] FFmpeg 执行超时({int(timeout)}s)被强制 kill"
+        ) from exc
+
+    if proc.returncode != 0:
+        stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
+        logger.error(
+            "[Compositor][%s] ❌ FFmpeg 执行失败(退出码=%d)!\n"
+            "完整命令:\n%s\n==== 完整 stderr ====\n%s",
+            level_name, proc.returncode, cmd_str, stderr[-2500:],
+        )
+        raise RuntimeError(
+            f"[{level_name}] FFmpeg 合成失败(退出码={proc.returncode}): {stderr[-1500:]}"
+        )
+    return proc
+
+
+def _verify_product(output_path: str, level_name: str) -> None:
+    """校验 FFmpeg 产物真实存在且非空(防损坏/空文件被当作成功)。"""
+    p = Path(output_path)
+    if not p.exists():
+        raise RuntimeError(
+            f"[{level_name}] FFmpeg 退出但未生成文件: {output_path}"
+        )
+    if p.stat().st_size < 1024:
+        raise RuntimeError(
+            f"[{level_name}] FFmpeg 生成文件过小(疑似空): "
+            f"{output_path} size={p.stat().st_size}"
+        )
+    logger.info(
+        "[Compositor][%s] 产物校验通过: %s (%d bytes)",
+        level_name, output_path, p.stat().st_size,
+    )
+
+
 async def _prepare_assets(
     project: VideoProject, storage_root: str
 ) -> tuple[List[str], List[str], str]:
@@ -379,15 +459,7 @@ async def _prepare_bgm(vibe: str, target_path: str) -> str:
         "-b:a", "128k",
         target_path,
     ]
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=60,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("生成占位 BGM 超时(60s)被强制 kill") from exc
-    if proc.returncode != 0:
-        raise RuntimeError(f"生成占位 BGM 失败: {proc.stderr[-500:]}")
+    _run_ffmpeg_cmd(cmd, "BGM占位生成", timeout=60)
     return target_path
 
 
@@ -478,32 +550,13 @@ def _align_scene_sync(
         r=settings.OUTPUT_FPS,
         **{"movflags": "+faststart"},
     )
-    # === V-FFMPEG-GUARD: 编译命令 + subprocess.run(timeout=300),杜绝永久卡死 ===
+    # === V-FFMPEG-GUARD: 编译命令 + 统一执行器(-y + stdin=DEVNULL + timeout=300) ===
     cmd_args = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
-    logger.info(
-        "[Compositor] [%s] 开始音画对齐,完整命令:\n%s",
-        scene.scene_id, " ".join(cmd_args),
-    )
-    try:
-        proc = subprocess.run(cmd_args, capture_output=True, timeout=300)
-    except subprocess.TimeoutExpired as exc:
-        stderr = (exc.stderr or b"").decode("utf-8", errors="replace")
-        logger.error(
-            "[Compositor] [%s] ❌ 音画对齐 FFmpeg 超时(300s)已被强制终止:\n%s",
-            scene.scene_id, stderr[-1500:],
-        )
-        raise RuntimeError(
-            f"分镜 {scene.scene_id} 对齐超时(300s)被强制 kill"
-        ) from exc
-    if proc.returncode != 0:
-        stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
-        logger.error(
-            "[Compositor] [%s] 音画对齐 ffmpeg 失败(退出码=%d, stderr 末 1500 字):\n%s",
-            scene.scene_id, proc.returncode, stderr[-1500:],
-        )
-        raise RuntimeError(
-            f"分镜 {scene.scene_id} 对齐失败: {stderr[-800:]}"
-        )
+    # 统一执行器会打印完整命令并强制 stdin=DEVNULL,彻底杜绝交互卡死
+    _run_ffmpeg_cmd(cmd_args, f"对齐[{scene.scene_id}]", timeout=300)
+
+    # 产物校验:对齐输出必须真实存在且非空
+    _verify_product(output_path, f"对齐[{scene.scene_id}]")
     logger.info(
         "[%s] 对齐完成 -> %s (时长 %.3fs)", scene.scene_id, output_path, target_duration
     )
@@ -572,20 +625,7 @@ def _concat_voiceover(
         output_path,
     ]
     logger.info("[Compositor] voiceover 拼接命令: %s", " ".join(cmd))
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=120,
-        )
-    except subprocess.TimeoutExpired as exc:
-        logger.error("[Compositor] ❌ 拼接 voiceover 超时(120s)被强制终止")
-        raise RuntimeError("拼接 voiceover 超时(120s)被强制 kill") from exc
-    if proc.returncode != 0:
-        logger.error(
-            "[Compositor] 拼接 voiceover 失败! 完整命令:\n%s\n==== stderr ====\n%s",
-            " ".join(cmd), proc.stderr[-2000:],
-        )
-        raise RuntimeError(f"拼接 voiceover 失败: {proc.stderr[-1500:]}")
+    _run_ffmpeg_cmd(cmd, "voiceover拼接", timeout=120)
     logger.info("[Compositor] voiceover 拼接完成: %s", output_path)
     return output_path
 
@@ -828,55 +868,82 @@ def _build_final_graph(
 
 
 def _run_ffmpeg(out: "object", ffmpeg_exe: str, output_path: str, level_name: str) -> None:
-    """执行单次 ffmpeg 合成,捕获并打印完整命令与 stderr;校验产物。
+    """执行单次 ffmpeg 合成(经统一执行器),校验产物。
 
     失败时抛出 RuntimeError(携带完整命令与 stderr 末段),供降级档位捕获。
     """
     # 编译完整命令(必须成功——否则无法用带超时的 subprocess 执行)
     cmd_args = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
-    cmd_str = " ".join(cmd_args)
-    logger.info("[Compositor][%s] FFmpeg 完整命令:\n%s", level_name, cmd_str)
-
-    # === V-FFMPEG-GUARD: 用 subprocess.run(timeout=300) 执行 ===
-    # 关键!ffmpeg-python 的 run() 内部 process.communicate() 无任何超时,
-    # 一旦 FFmpeg 卡住会永久阻塞(整个任务死死卡死)。改为 subprocess.run
-    # 并强制 timeout=300:超时自动 kill 子进程并抛异常,杜绝永久卡死。
-    try:
-        proc = subprocess.run(cmd_args, capture_output=True, timeout=300)
-    except subprocess.TimeoutExpired as exc:
-        stderr = (exc.stderr or b"").decode("utf-8", errors="replace")
-        logger.error(
-            "[Compositor][%s] ❌ FFmpeg 执行超时(300s)已被强制终止!\n"
-            "完整命令:\n%s\n==== stderr 末段 ====\n%s",
-            level_name, cmd_str, stderr[-2000:],
-        )
-        raise RuntimeError(
-            f"[{level_name}] FFmpeg 执行超时(300s)被强制 kill"
-        ) from exc
-
-    if proc.returncode != 0:
-        stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
-        logger.error(
-            "[Compositor][%s] ❌ FFmpeg 执行失败(退出码=%d)!\n"
-            "完整命令:\n%s\n==== 完整 stderr ====\n%s",
-            level_name, proc.returncode, cmd_str, stderr[-2500:],
-        )
-        raise RuntimeError(
-            f"[{level_name}] FFmpeg 合成失败(退出码={proc.returncode}): {stderr[-1500:]}"
-        )
-
+    # 统一执行器:强制 -y + stdin=DEVNULL + timeout=300 + 完整命令/ stderr 日志
+    _run_ffmpeg_cmd(cmd_args, level_name, timeout=300)
     # 产物校验:必须真实存在且非空
-    p = Path(output_path)
-    if not p.exists():
-        raise RuntimeError(f"[{level_name}] FFmpeg 退出但未生成文件: {output_path}")
-    if p.stat().st_size < 1024:
-        raise RuntimeError(
-            f"[{level_name}] FFmpeg 生成文件过小(疑似空): {output_path} size={p.stat().st_size}"
+    _verify_product(output_path, level_name)
+
+
+def _compose_ultra_minimal(
+    input_paths: List[str],
+    output_path: str,
+    ffmpeg_exe: str,
+    aspect_ratio: str = "9:16",
+) -> None:
+    """极简保底合成:仅把分镜 MP4 顺序拼接成可播放视频(不加任何字幕/音频/转场)。
+
+    这是"无论发生什么,只要分镜视频在就必出 MP4"的终极兜底:
+      - 先试 concat demuxer + -c copy(极速,要求参数一致;aligned 视频必然一致)
+      - 失败则降级为 scale 统一分辨率 + filter_complex concat 重编码(纯视频)
+    两档均经统一执行器:强制 -y + stdin=DEVNULL + timeout=300 + 完整命令/ stderr。
+    """
+    valid = [
+        p for p in input_paths
+        if p and os.path.exists(p) and os.path.getsize(p) > 0
+    ]
+    if len(valid) < 1:
+        raise RuntimeError("[Compositor] 极简保底失败: 没有任何有效分镜视频可拼接")
+
+    target_w, target_h = _get_aspect_resolution(aspect_ratio)
+
+    if len(valid) == 1:
+        cmd = [ffmpeg_exe, "-y", "-i", valid[0], "-c", "copy", output_path]
+        _run_ffmpeg_cmd(cmd, "L4_极简拼接(单分镜)", timeout=300)
+        _verify_product(output_path, "L4_极简拼接")
+        return
+
+    # 多分镜:先试 concat demuxer -c copy(最快)
+    list_path = os.path.join(os.path.dirname(output_path), "_ultra_minimal_list.txt")
+    with open(list_path, "w", encoding="utf-8") as f:
+        for p in valid:
+            ap = os.path.abspath(p).replace("\\", "/").replace("'", r"'\''")
+            f.write(f"file '{ap}'\n")
+    copy_cmd = [
+        ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
+        "-i", list_path, "-c", "copy", output_path,
+    ]
+    try:
+        _run_ffmpeg_cmd(copy_cmd, "L4_极简拼接(copy)", timeout=300)
+        _verify_product(output_path, "L4_极简拼接")
+        return
+    except Exception as copy_exc:  # noqa: BLE001
+        logger.warning(
+            "[Compositor] L4 -c copy 拼接失败,降级为重编码拼接: %s",
+            copy_exc,
         )
-    logger.info(
-        "[Compositor][%s] 产物校验通过: %s (%d bytes)",
-        level_name, output_path, p.stat().st_size,
+
+    # 重编码拼接(纯视频,scale 统一分辨率,无音频/字幕/转场)
+    inputs = [ffmpeg.input(p) for p in valid]
+    vstreams = [
+        ip.video.filter("scale", target_w, target_h).filter("setsar", 1)
+        for ip in inputs
+    ]
+    vcat = ffmpeg.concat(*vstreams, v=1, a=0)
+    out = ffmpeg.output(
+        vcat, output_path,
+        vcodec="libx264", crf=23, pix_fmt="yuv420p",
+        preset="veryfast", r=settings.OUTPUT_FPS,
+        **{"movflags": "+faststart"},
     )
+    re_cmd = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
+    _run_ffmpeg_cmd(re_cmd, "L4_极简拼接(重编码)", timeout=300)
+    _verify_product(output_path, "L4_极简拼接")
 
 
 def _compose_final_sync(
@@ -980,7 +1047,25 @@ def _compose_final_sync(
             )
             continue
 
-    raise RuntimeError(f"所有合成档位(L1/L2/L3)均失败,最后错误: {last_exc}")
+    # === 终极保底(L4): 只要分镜视频在,必出一可播放 MP4 ===
+    logger.warning(
+        "[Compositor] ⚠️ L1/L2/L3 全部失败,触发极简保底合成: "
+        "仅顺序拼接分镜视频(无字幕/无音频/无转场)"
+    )
+    try:
+        _compose_ultra_minimal(
+            aligned_paths, output_path, ffmpeg_exe, project.input.aspect_ratio
+        )
+        logger.warning(
+            "[Compositor] ✅ 极简保底合成成功(档位=L4_极简拼接): %s", output_path
+        )
+        return output_path
+    except Exception as l4_exc:  # noqa: BLE001
+        logger.error("[Compositor] ❌ 极简保底合成也失败: %s", l4_exc)
+
+    raise RuntimeError(
+        f"所有合成档位(L1/L2/L3/L4)均失败,最后错误: {last_exc}; L4: {l4_exc}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1022,6 +1107,7 @@ class Compositor:
                 [ffmpeg_exe, "-version"],
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=30,
+                stdin=subprocess.DEVNULL,
             )
             if _ver.returncode != 0:
                 raise RuntimeError(f"ffmpeg -version 返回非零: {_ver.stderr[-500:]}")
@@ -1068,8 +1154,24 @@ class Compositor:
         _assert_inputs_nonempty(project.project_id, _labeled_inputs)
 
         # 阶段 B:音画对齐(并行)
-        aligned_paths = await _align_all_scenes(
-            project, video_paths, audio_paths, storage_root
+        try:
+            aligned_paths = await _align_all_scenes(
+                project, video_paths, audio_paths, storage_root
+            )
+        except Exception as align_exc:  # noqa: BLE001
+            # 对齐阶段任一分镜异常(含超时)不得让整条流水线失败——
+            # 降级为直接使用原始分镜视频进行后续的最终保底拼接。
+            logger.warning(
+                "[Compositor] ⚠️ 音画对齐阶段异常(%s),降级为直接使用原始分镜视频拼接",
+                align_exc,
+            )
+            aligned_paths = list(video_paths)
+
+        # 对齐产物强制生死校验:任一对齐视频缺失/0字节立刻抛异常,
+        # 不让最终合成去处理坏文件(坏文件会导致 FFmpeg 卡死或产出损坏)。
+        _assert_inputs_nonempty(
+            project.project_id,
+            [(f"对齐视频[{i}]", p) for i, p in enumerate(aligned_paths)],
         )
 
         # 拼接 voiceover + 生成 SRT(仅配音模式)
