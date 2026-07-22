@@ -75,6 +75,27 @@ app.include_router(chat.router)
 app.include_router(dashboard.router)
 
 
+# ===== 自愈:进程启动时拉起"孤儿任务" =====
+# 后台 asyncio 流水线任务只存活于拉起它的 worker 进程内。当 Gunicorn worker 因
+# 部署 / 重启 / OOM 被回收时,在跑的任务会被静默杀死(无错误、无完成),导致前端
+# 进度条永远卡在某阶段。进程刚启动时任何"活跃"状态的任务都必定是孤儿,直接续跑
+# 绝对安全(单 worker 下不会重复拉起)。看门狗则兜底周期性卡死的任务。
+@app.on_event("startup")
+async def _startup_self_heal():
+    try:
+        from app.api.routes import projects as _projects
+        recovered = _projects.recover_orphaned_tasks()
+        if recovered:
+            logging.getLogger(__name__).info(
+                "[Self-Heal] 启动自愈:拉起 %d 个孤儿任务: %s", len(recovered), recovered
+            )
+        else:
+            logging.getLogger(__name__).info("[Self-Heal] 启动未发现需自愈的孤儿任务")
+        _projects.start_watchdog()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning("[Self-Heal] 启动自愈异常(已忽略): %s", exc)
+
+
 @app.post("/api/shutdown")
 async def shutdown():
     """优雅关闭后台服务(仅桌面端 AIVS_DESKTOP=1 时可用)。

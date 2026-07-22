@@ -14,7 +14,7 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -129,6 +129,13 @@ def init_db() -> None:
             logger.info("[DB] 迁移: 已添加 logs 列")
         except Exception:
             pass
+
+        # 自愈: updated_at 心跳,每次状态同步都会刷新,用于判断任务是否卡死
+        try:
+            conn.execute("ALTER TABLE projects ADD COLUMN updated_at TEXT")
+            logger.info("[DB] 迁移: 已添加 updated_at 列")
+        except Exception:
+            pass
     logger.info("[DB] SQLite 初始化完成: %s", _get_db_path())
 
 
@@ -191,14 +198,17 @@ def upsert_project(
     started_at / completed_at / logs 随每次同步落盘(幂等),供前端耗时/ETA/日志展示。
     """
     ts = created_at or datetime.utcnow().isoformat()
+    # 心跳:每次同步都刷新 updated_at,供自愈逻辑判断任务是否卡死
+    updated_at = datetime.utcnow().isoformat()
     with _get_conn() as conn:
         conn.execute(
             """
             INSERT INTO projects
                 (task_id, product_id, status, progress, language, vibe,
                  visual_style, scenes_data, final_video_url, video_engine,
-                 error_message, creator_name, started_at, completed_at, logs, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 error_message, creator_name, started_at, completed_at, logs,
+                 updated_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(task_id) DO UPDATE SET
                 product_id      = excluded.product_id,
                 status          = excluded.status,
@@ -212,11 +222,13 @@ def upsert_project(
                 error_message   = excluded.error_message,
                 started_at      = excluded.started_at,
                 completed_at    = excluded.completed_at,
-                logs            = excluded.logs
+                logs            = excluded.logs,
+                updated_at      = excluded.updated_at
             """,
             (project_id, product_id, status, progress, language, vibe,
              visual_style, scenes_data, final_video_url, video_engine,
-             error_message, creator_name, started_at, completed_at, logs_json, ts),
+             error_message, creator_name, started_at, completed_at, logs_json,
+             updated_at, ts),
         )
     logger.debug("[DB] 项目已同步: %s (status=%s, progress=%.2f, creator=%s)",
                  project_id, status, progress, creator_name)
@@ -415,6 +427,30 @@ def delete_project(task_id: str) -> bool:
     if deleted:
         logger.info("[DB] 项目已删除: %s", task_id)
     return deleted
+
+
+def get_active_tasks(stale_seconds: Optional[int] = None) -> list[tuple]:
+    """返回处于活跃(未终态)的任务 [(task_id, status), ...]。
+
+    stale_seconds 指定时,仅返回 updated_at 早于 cutoff 的任务(用于看门狗判断卡死)。
+    未指定时返回全部活跃任务(用于进程启动时的孤儿任务自愈)。
+    """
+    placeholders = ",".join("?" * len(_ACTIVE_STATUSES))
+    with _get_conn() as conn:
+        if stale_seconds is None:
+            rows = conn.execute(
+                f"SELECT task_id, status FROM projects "
+                f"WHERE status IN ({placeholders})",
+                _ACTIVE_STATUSES,
+            ).fetchall()
+        else:
+            cutoff = (datetime.utcnow() - timedelta(seconds=stale_seconds)).isoformat()
+            rows = conn.execute(
+                f"SELECT task_id, status FROM projects "
+                f"WHERE status IN ({placeholders}) AND updated_at < ?",
+                (*_ACTIVE_STATUSES, cutoff),
+            ).fetchall()
+    return [(r["task_id"], r["status"]) for r in rows]
 
 
 # ---------------------------------------------------------------------------

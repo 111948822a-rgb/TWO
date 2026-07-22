@@ -287,6 +287,102 @@ def load_project(task_id: str) -> Optional[VideoProject]:
 
 
 # ---------------------------------------------------------------------------
+# 自愈:孤儿任务拉起(进程重启 / worker 回收导致后台 asyncio 任务被杀死)
+# ---------------------------------------------------------------------------
+
+# 状态 -> 续跑阶段映射:重启后从"最后已知阶段"接着跑,避免无谓重跑已完成阶段。
+#   pending / scripting -> 从头(SCRIPTING)跑全流程
+#   img_gen  -> 从 IMG_GEN 续(脚本+分镜已落库,可复用)
+#   vid_gen  -> 从 VID_GEN 续(关键帧已落库)
+#   audio_gen-> 从 AUDIO_GEN 续(视频已落库)
+#   compositing -> 从 COMPOSITING 续(各分镜素材已落库,直接合成)
+_RESUME_STAGE_FOR_STATUS = {
+    "pending": None,
+    "scripting": None,
+    "img_gen": ProjectStatus.IMG_GEN,
+    "vid_gen": ProjectStatus.VID_GEN,
+    "audio_gen": ProjectStatus.AUDIO_GEN,
+    "compositing": ProjectStatus.COMPOSITING,
+}
+
+
+def _respawn_orphan(task_id: str, status: str) -> bool:
+    """拉起单个孤儿任务(进程刚启动,该任务的后台协程必然已死,可直接续跑)。"""
+    project = load_project(task_id)
+    if not project:
+        logger.warning("[recovery] 孤儿任务 %s 无法从 SQLite 重建,跳过", task_id)
+        return False
+    # 若仍有同名后台任务在跑(理论不会:刚启动进程无残留),先取消避免重复
+    existing = _task_refs.get(task_id)
+    if existing is not None and not existing.done():
+        existing.cancel()
+    from_stage = _RESUME_STAGE_FOR_STATUS.get(status)
+    project.error = None
+    project.technical_traceback = None
+    project.status = from_stage or ProjectStatus.PENDING
+    _spawn_task(task_id, _run_safe(project, from_stage=from_stage))
+    logger.info(
+        "[recovery] 已拉起孤儿任务 %s (原状态=%s, 续跑阶段=%s)",
+        task_id, status, (from_stage.value if from_stage else "从头 SCRIPTING"),
+    )
+    return True
+
+
+def recover_orphaned_tasks(stale_seconds: Optional[int] = None) -> list:
+    """扫描并拉起所有孤儿/卡死任务。
+
+    - 进程启动时(不传 stale_seconds):所有处于活跃状态的任务都视为孤儿,直接拉起。
+      此时进程刚启动,任何在跑的后台协程都已随旧进程消亡,拉起绝对安全、不会重复。
+    - 看门狗场景(传 stale_seconds):仅拉起 updated_at 陈旧超过阈值的任务,
+      避免误拉起正在健康推进(尤其视频生成可能持续 5-15 分钟)的任务。
+
+    Returns: 被拉起的任务 task_id 列表。
+    """
+    from app.core.database import get_active_tasks
+
+    active = get_active_tasks(stale_seconds=stale_seconds)
+    recovered: list = []
+    for task_id, status in active:
+        try:
+            if _respawn_orphan(task_id, status):
+                recovered.append(task_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[recovery] 拉起任务 %s 失败: %s", task_id, exc)
+    return recovered
+
+
+async def _watchdog_loop(interval_seconds: int = 300, stale_seconds: int = 3600) -> None:
+    """周期看门狗:拉起卡死(updated_at 长期不更新)的活跃任务。
+
+    stale_seconds 必须远大于单个阶段最大耗时:视频生成(VID_GEN)串行 3 段,
+    每段轮询上限 POLL_MAX_ATTEMPTS×POLL_INTERVAL=120×5s=10min,即单阶段最长
+    ~30 分钟。阈值设为 3600s(1 小时),确保任何健康推进中的任务绝不会被误判为
+    卡死而取消/重复拉起;只有真正被遗弃(进程被杀且未触发启动自愈的极端情况)
+    的任务才会在 1 小时后被兜底拉起。
+    """
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            recovered = recover_orphaned_tasks(stale_seconds=stale_seconds)
+            if recovered:
+                logger.warning(
+                    "[watchdog] 拉起 %d 个卡死任务: %s", len(recovered), recovered
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[watchdog] 自愈扫描异常(已忽略): %s", exc)
+
+
+def start_watchdog() -> None:
+    """在事件循环中启动看门狗后台任务(进程启动时调用一次)。"""
+    try:
+        asyncio.create_task(_watchdog_loop())
+        logger.info("[watchdog] 卡死任务自愈看门狗已启动(阈值=3600s)")
+    except RuntimeError as exc:
+        # 无运行中的事件循环(如某些测试环境)时静默跳过
+        logger.warning("[watchdog] 无法启动看门狗(无运行事件循环): %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # 单任务接口
 # ---------------------------------------------------------------------------
 
