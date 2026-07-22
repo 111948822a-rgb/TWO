@@ -477,6 +477,10 @@ async def stage_audio_gen(project: VideoProject) -> None:
         project.project_id, project.input.language, voice,
     )
 
+    # V-XRAY-2: 收集每个分镜真实的 TTS 死因(欠费/配额/音色/地域/超时等),
+    # 供聚合阶段把根因打印出来 —— 而非只报笼统的"本地文件缺失"。
+    audio_errors: dict[str, str] = {}
+
     async def _process_audio(scene: Scene) -> None:
         """单分镜配音生成:调 CosyVoice,返回 mp3 + 精确 duration。
 
@@ -528,6 +532,7 @@ async def stage_audio_gen(project: VideoProject) -> None:
                 "[TTS] ❌ 单分镜 %s 配音超时(80s, 已耗时 %.1fs),降级为无配音(视频仍合成)",
                 scene.scene_id, elapsed,
             )
+            audio_errors[scene.scene_id] = f"配音超时(>{80}s)"
             if scene.assets and scene.assets.audio:
                 scene.assets.audio.local_path = None
                 scene.assets.audio.duration = None
@@ -538,6 +543,7 @@ async def stage_audio_gen(project: VideoProject) -> None:
                 "[TTS] 单分镜 %s 配音失败(耗时 %.1fs),降级为无配音(视频仍合成): %s",
                 scene.scene_id, elapsed, exc,
             )
+            audio_errors[scene.scene_id] = f"{type(exc).__name__}: {exc}"
             # 清除可能残留的音频信息,避免合成阶段误用半成品
             if scene.assets and scene.assets.audio:
                 scene.assets.audio.local_path = None
@@ -549,33 +555,42 @@ async def stage_audio_gen(project: VideoProject) -> None:
     await _run_scenes_concurrent(
         project, _process_audio, ProjectStatus.AUDIO_GEN, "音频生成"
     )
-    # V-XRAY: 音频生成后硬校验 —— 配音开启时,标记为 AUDIO_DONE 的分镜其本地
-    # mp3(local_path)必须真实落盘且 >1KB。若只是把 TTS 的云端 URL 存进库而
-    # 没物理下载,这里立刻暴露(否则合成阶段找不到本地音频)。
-    # 注: 单分镜 TTS 失败的降级逻辑(置 local_path=None 继续)仍保留,
-    #      仅当『所有』配音分镜都缺失本地文件时才视为致命断层。
+    # V-XRAY-2: 音频生成后自检 —— 配音开启时,统计本地 mp3 真实落盘情况,
+    # 并把每个失败分镜的**真实 TTS 死因**(欠费/配额/音色/地域/超时)打印出来。
+    #
+    # ⚠️ 重要设计原则(修正上一版倒退):配音是**可降级的可选项**,不是硬性产物。
+    #   系统既有设计为「配音失败 → 降级为无配音 → 视频照常合成出片」。上一版
+    #   在『全部配音失败』时直接 raise 致命错误,反而破坏了这个保命降级,导致
+    #   连一个无配音的视频都拿不到。此处**绝不 raise**,只做响亮告警 + 暴露根因,
+    #   把降级为纯 BGM/无旁白的决定交给合成阶段(stage_compositing 已实现)。
     if project.input.enable_voiceover:
         done = [s for s in project.scenes if s.status == SceneStatus.AUDIO_DONE]
         bad = [
-            (s.scene_id, (s.assets.audio.local_path if s.assets.audio else None),
-             _xray_size(s.assets.audio.local_path if s.assets.audio else None))
-            for s in done
+            s for s in done
             if not s.assets.audio or not s.assets.audio.local_path
             or _xray_size(s.assets.audio.local_path) < _XRAY_MIN_AUDIO_BYTES
         ]
-        if bad and len(bad) == len(done):
-            details = " | ".join(
-                f"[{sid}] 路径={p}, 大小={sz}B" for sid, p, sz in bad
+        if bad:
+            reason_str = " | ".join(
+                f"[{s.scene_id}] {audio_errors.get(s.scene_id, '本地文件缺失/过小(<%dB)' % _XRAY_MIN_AUDIO_BYTES)}"
+                for s in bad
             )
-            raise RuntimeError(
-                f"音频下载断层:全部 {len(bad)} 个配音分镜本地文件缺失/过小"
-                f"(<{_XRAY_MIN_AUDIO_BYTES}B): {details}"
-            )
-        elif bad:
-            logger.warning(
-                "[%s][全链路自检] ⚠️ %d 个分镜配音本地文件缺失/过小,将降级为无配音合成: %s",
-                project.project_id, len(bad),
-                " | ".join(f"[{sid}] {sz}B" for sid, _, sz in bad),
+            if len(bad) == len(done):
+                logger.error(
+                    "[%s][全链路自检] ⚠️ 全部 %d 个分镜配音失败,自动降级为『无配音/纯 BGM』"
+                    "继续合成(视频仍可产出)。各分镜 TTS 死因如下,请据此排查 "
+                    "DASHSCOPE_API_KEY 余额/配额/地域/音色: %s",
+                    project.project_id, len(bad), reason_str,
+                )
+            else:
+                logger.warning(
+                    "[%s][全链路自检] ⚠️ %d/%d 个分镜配音失败(将降级为无配音),死因: %s",
+                    project.project_id, len(bad), len(done), reason_str,
+                )
+        else:
+            logger.info(
+                "[%s][全链路自检] ✅ 全部 %d 个分镜配音本地 mp3 落盘校验通过",
+                project.project_id, len(done),
             )
     _trace_artifacts(project, "阶段④ 音频完成")
     logger.info("[%s] 阶段④ 完成", project.project_id)

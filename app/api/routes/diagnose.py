@@ -58,6 +58,38 @@ def _list_files(root: str, max_entries: int = 200) -> list[dict]:
     return out
 
 
+def _mask(val: "str | None") -> dict:
+    """脱敏展示密钥:仅返回是否配置 + 长度 + 首尾 2 位,绝不泄露完整密钥。"""
+    if not val:
+        return {"configured": False, "length": 0, "hint": None}
+    v = str(val)
+    hint = (v[:2] + "***" + v[-2:]) if len(v) >= 6 else "***"
+    return {"configured": True, "length": len(v), "hint": hint}
+
+
+def _env_check() -> dict:
+    """检查关键外部服务的凭证/配置是否就位(脱敏)。
+
+    『视频无法生成』最常见的环境根因就是密钥缺失/欠费/地域不匹配。
+    这里一眼看出各 Key 是否配置(不泄露明文),配额/欠费需到阿里云控制台确认。
+    """
+    return {
+        "DASHSCOPE_API_KEY": _mask(getattr(settings, "DASHSCOPE_API_KEY", None)),
+        "DEEPSEEK_API_KEY": _mask(getattr(settings, "DEEPSEEK_API_KEY", None)),
+        "TTS_MODEL": getattr(settings, "TTS_MODEL", None),
+        "TTS_VOICE": getattr(settings, "TTS_VOICE", None),
+        "VIDEO_RESOLUTION": getattr(settings, "VIDEO_RESOLUTION", None),
+        "VIDEO_DURATION": getattr(settings, "VIDEO_DURATION", None),
+        "RENDER_EXTERNAL_URL": getattr(settings, "RENDER_EXTERNAL_URL", None),
+        "hint": (
+            "DASHSCOPE_API_KEY 用于 图片(通义万相)/视频(HappyHorse)/配音(CosyVoice),"
+            "三者共用。若 configured=false → 未配置;若已配置但仍失败,"
+            "常见为『欠费(Arrearage)』或『配额耗尽(QuotaExhausted)』或『地域不匹配』,"
+            "请到阿里云百炼控制台确认余额/开通状态(仅华北2-北京地域可用)。"
+        ),
+    }
+
+
 def _ffmpeg_version() -> dict:
     """获取 ffmpeg 可执行路径与 -version 首行。"""
     try:
@@ -116,6 +148,7 @@ async def diagnose() -> dict:
         ffmpeg_test_info = {"path": ffmpeg_test, "exists": False, "size": 0}
 
     return {
+        "env_check": _env_check(),
         "storage_root": _dir_info(storage_root),
         "data_root": _dir_info(data_root),
         "subdir_summary": subdir_summary,
