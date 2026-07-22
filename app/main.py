@@ -28,7 +28,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, chat, dashboard, history, products, projects
+from app.api.routes import auth, chat, dashboard, diagnose, history, products, projects
 from app.core.config import settings
 from app.core.database import init_db
 
@@ -73,6 +73,7 @@ app.include_router(history.router)
 app.include_router(products.router)
 app.include_router(chat.router)
 app.include_router(dashboard.router)
+app.include_router(diagnose.router)
 
 
 # ===== 自愈:进程启动时拉起"孤儿任务" =====

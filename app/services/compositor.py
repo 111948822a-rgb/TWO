@@ -420,6 +420,36 @@ def _verify_product(output_path: str, level_name: str) -> None:
     )
 
 
+def _ffmpeg_health_check(storage_root: str) -> None:
+    """FFmpeg 环境独立体检(V-XRAY #3)。
+
+    在最终复杂合成之前,先用 FFmpeg 生成一个 1 秒纯黑测试视频。若生成失败,
+    说明 Docker 内 FFmpeg 运行环境损坏或 /data 无写入权限,直接抛出
+    [FFmpeg 体检失败],不再执行后续复杂合成(避免无意义地卡死/报错)。
+    """
+    ffmpeg_exe = _get_ffmpeg_exe()
+    test_path = str(Path(storage_root) / "ffmpeg_test.mp4")
+    cmd = [
+        ffmpeg_exe, "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=1280x720:d=1",
+        "-pix_fmt", "yuv420p",
+        test_path,
+    ]
+    logger.info("[FFmpeg 体检] 开始生成 1 秒黑场测试视频: %s", test_path)
+    try:
+        _run_ffmpeg_cmd(cmd, "FFmpeg体检", timeout=60)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"[FFmpeg 体检失败] 无法生成测试视频(FFmpeg 环境损坏或 "
+            f"{storage_root} 无写入权限): {exc}"
+        ) from exc
+    if not os.path.exists(test_path) or os.path.getsize(test_path) < 1024:
+        raise RuntimeError(
+            f"[FFmpeg 体检失败] 测试视频未生成或过小: {test_path}"
+        )
+    logger.info("[FFmpeg 体检] ✅ 1秒黑场测试视频生成成功: %s", test_path)
+
+
 async def _prepare_assets(
     project: VideoProject, storage_root: str
 ) -> tuple[List[str], List[str], str]:
@@ -450,7 +480,19 @@ async def _prepare_assets(
         raise RuntimeError(
             f"分镜视频下载阶段失败(URL 可能失效/不可达): {exc}"
         ) from exc
-    # 强制校验:每个视频本地文件必须真实存在且非空(防"无米之炊")
+
+    # ---- 视频下载"生死追踪"(V-XRAY):下载后即打印本地路径+存在+精确字节 ----
+    # 这是验证『云端 URL 是否真正落盘到本地 /data/storage』的最关键证据。
+    logger.warning("=" * 72)
+    for scene, path in zip(project.scenes, downloaded):
+        sz = os.path.getsize(path) if os.path.exists(path) else 0
+        logger.warning(
+            "[全链路自检] 分镜 %s 视频: 路径=%s, 存在=%s, 大小=%d bytes",
+            scene.scene_id, path, os.path.exists(path), sz,
+        )
+    logger.warning("=" * 72)
+
+    # 强制校验:每个视频本地文件必须真实存在且 >10KB(排除空壳/截断/HTML错误页)
     for scene, path in zip(project.scenes, downloaded):
         if not _verify_file(path, min_bytes=1024):
             logger.warning(
@@ -459,12 +501,13 @@ async def _prepare_assets(
                 scene.assets.video_clip.url,
             )
             await _download_file(scene.assets.video_clip.url, path)
-        if not _verify_file(path, min_bytes=1024):
+        sz = os.path.getsize(path) if os.path.exists(path) else 0
+        if not _verify_file(path, min_bytes=1024) or sz < 10240:
             raise RuntimeError(
-                f"分镜 {scene.scene_id} 视频下载失败或文件为空: {path} "
-                f"(url={scene.assets.video_clip.url})"
+                f"分镜 {scene.scene_id} 视频下载失败/文件过小(仅 {sz}B, 需>10KB): "
+                f"{path} (url={scene.assets.video_clip.url})"
             )
-    logger.info("[%s] 视频片段下载完成并校验通过", project.project_id)
+    logger.info("[%s] 视频片段下载完成并校验通过(均>10KB)", project.project_id)
 
     # 旁白音频路径(已在阶段④落盘);V4.0 配音关闭时跳过
     audio_paths: List[str] = []
@@ -1342,6 +1385,9 @@ class Compositor:
             raise RuntimeError(
                 f"FFmpeg 环境自检失败(命令无法执行): {ffchk}"
             ) from ffchk
+
+        # ---- FFmpeg 独立体检:先生成 1 秒黑场测试视频,确保运行环境/写入权限 OK ----
+        _ffmpeg_health_check(storage_root)
 
         logger.info(
             "[%s] 阶段⑤ 合成开始(ffmpeg: %s, 配音=%s)",

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import traceback
 from datetime import datetime
@@ -64,6 +65,69 @@ def _sync_db(project: VideoProject) -> None:
     """同步 VideoProject 到 SQLite(V8.0)。"""
     if _DB_AVAILABLE:
         sync_project_from_model(project)
+
+
+# ---------------------------------------------------------------------------
+# V-XRAY: 全链路产物"生死追踪"
+#   用户核心质疑: HappyHorse / TTS 返回云端 URL,代码是否真的把文件下载到
+#   本地 /data/storage? 这里在**每个阶段完成后**暴力打印每个分镜所有中间
+#   产物的绝对路径 + 存在性 + 精确字节数,让"中间产物断层"在日志里无所遁形。
+# ---------------------------------------------------------------------------
+
+# 生死阈值:视频本地落盘后必须 >10KB(排除空壳/截断);音频 mp3 短片段也远超 1KB
+_XRAY_MIN_VIDEO_BYTES = 10240
+_XRAY_MIN_AUDIO_BYTES = 1024
+
+
+def _xray_size(path: "str | None") -> int:
+    """返回文件字节数;路径为空或不存在时返回 0(绝不抛异常)。"""
+    if not path:
+        return 0
+    try:
+        return os.path.getsize(path) if os.path.exists(path) else 0
+    except OSError:
+        return 0
+
+
+def _trace_artifacts(project: "VideoProject", tag: str) -> None:
+    """全链路 X 光级产物生死追踪(纯观测,不中断流程)。
+
+    在每个阶段完成后打印每个分镜的 关键帧图 / 视频 / 音频 的绝对路径 +
+    存在性 + 精确字节数。格式与用户要求一致,便于线上 grep 定位断层。
+
+    注意:视频的**本地落盘**发生在合成阶段 compositor._prepare_assets,
+    故 stage_video_gen 阶段视频 local_path 通常尚为 None(仅云端 URL 已就绪),
+    真正的本地落盘校验在 compositor 内完成。
+    """
+    logger.warning("=" * 72)
+    logger.warning(
+        "[全链路自检] >>> %s | 任务=%s | 分镜数=%d | 配音=%s",
+        tag, project.project_id, len(project.scenes),
+        "开" if project.input.enable_voiceover else "关",
+    )
+    for i, scene in enumerate(project.scenes, 1):
+        a = scene.assets
+        # 关键帧图(通常为云端 URL,用于图生视频,不直接进 FFmpeg)
+        kf = a.keyframe_image
+        kf_path = kf.local_path if kf else None
+        # 视频
+        vc = a.video_clip
+        v_url = vc.url if vc else None
+        v_local = vc.local_path if vc else None
+        # 音频
+        au = a.audio
+        a_local = au.local_path if au else None
+        logger.warning(
+            "[全链路自检] 分镜%d | 图:路径=%s,存在=%s,大小=%dB | "
+            "视频:URL=%s,本地=%s,存在=%s,大小=%dB | "
+            "音频:路径=%s,存在=%s,大小=%dB",
+            i,
+            kf_path or "(无)", bool(kf_path and os.path.exists(kf_path)), _xray_size(kf_path),
+            v_url or "(无)", v_local or "(暂未落盘/合成阶段下载)",
+            bool(v_local and os.path.exists(v_local)), _xray_size(v_local),
+            a_local or "(无)", bool(a_local and os.path.exists(a_local)), _xray_size(a_local),
+        )
+    logger.warning("=" * 72)
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +265,7 @@ async def stage_image_gen(project: VideoProject) -> None:
         "[%s] 阶段② 完成(成功 %d/%d)",
         project.project_id, len(succeeded), len(project.scenes),
     )
+    _trace_artifacts(project, "阶段② 生图完成")
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +379,16 @@ async def stage_video_gen(project: VideoProject) -> None:
         raise RuntimeError(
             f"全部 {len(project.scenes)} 个分镜视频均生成失败: {details}"
         )
+    # V-XRAY: 视频生成后硬校验 —— 标记为成功(VID_DONE)的分镜,其云端视频
+    # URL 必须真实存在(本地落盘在合成阶段完成,这里先确保『云端产物』没断)。
+    for s in succeeded:
+        vc = s.assets.video_clip
+        if not vc or not vc.url:
+            logger.error(
+                "[%s][全链路自检] ❌ 分镜 %s 视频标记为成功,但 video_clip.url 为空(云端产物断层)!",
+                project.project_id, s.scene_id,
+            )
+    _trace_artifacts(project, "阶段③ 视频完成")
     logger.info(
         "[%s] 阶段③ 完成(成功 %d/%d)",
         project.project_id, len(succeeded), len(project.scenes),
@@ -474,6 +549,35 @@ async def stage_audio_gen(project: VideoProject) -> None:
     await _run_scenes_concurrent(
         project, _process_audio, ProjectStatus.AUDIO_GEN, "音频生成"
     )
+    # V-XRAY: 音频生成后硬校验 —— 配音开启时,标记为 AUDIO_DONE 的分镜其本地
+    # mp3(local_path)必须真实落盘且 >1KB。若只是把 TTS 的云端 URL 存进库而
+    # 没物理下载,这里立刻暴露(否则合成阶段找不到本地音频)。
+    # 注: 单分镜 TTS 失败的降级逻辑(置 local_path=None 继续)仍保留,
+    #      仅当『所有』配音分镜都缺失本地文件时才视为致命断层。
+    if project.input.enable_voiceover:
+        done = [s for s in project.scenes if s.status == SceneStatus.AUDIO_DONE]
+        bad = [
+            (s.scene_id, (s.assets.audio.local_path if s.assets.audio else None),
+             _xray_size(s.assets.audio.local_path if s.assets.audio else None))
+            for s in done
+            if not s.assets.audio or not s.assets.audio.local_path
+            or _xray_size(s.assets.audio.local_path) < _XRAY_MIN_AUDIO_BYTES
+        ]
+        if bad and len(bad) == len(done):
+            details = " | ".join(
+                f"[{sid}] 路径={p}, 大小={sz}B" for sid, p, sz in bad
+            )
+            raise RuntimeError(
+                f"音频下载断层:全部 {len(bad)} 个配音分镜本地文件缺失/过小"
+                f"(<{_XRAY_MIN_AUDIO_BYTES}B): {details}"
+            )
+        elif bad:
+            logger.warning(
+                "[%s][全链路自检] ⚠️ %d 个分镜配音本地文件缺失/过小,将降级为无配音合成: %s",
+                project.project_id, len(bad),
+                " | ".join(f"[{sid}] {sz}B" for sid, _, sz in bad),
+            )
+    _trace_artifacts(project, "阶段④ 音频完成")
     logger.info("[%s] 阶段④ 完成", project.project_id)
 
 
