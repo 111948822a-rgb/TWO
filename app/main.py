@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -65,7 +66,11 @@ if os.getenv("RENDER_EXTERNAL_URL"):
 # 诊断:确认实际持久化落点(本地桌面形态应位于 用户文档/AIVideoStudio 之下)
 print(f"💾 [Startup] DATA_DIR={DATA_DIR.resolve()}  STORAGE_DIR={STORAGE_DIR.resolve()}", flush=True)
 
-init_db()
+try:
+    init_db()
+except Exception as exc:  # noqa: BLE001
+    # 初始化失败不应让整个进程起不来(请求时仍可重试/报错),避免 import 期崩溃 -> 502
+    logging.getLogger(__name__).warning("[Startup] init_db 异常(已忽略, 站点仍尝试启动): %s", exc)
 
 app.include_router(auth.router)
 app.include_router(projects.router)
@@ -76,11 +81,13 @@ app.include_router(dashboard.router)
 app.include_router(diagnose.router)
 
 
-# ===== 自愈:进程启动时拉起"孤儿任务" =====
+# ===== 自愈:进程启动时处置"孤儿任务" =====
 # 后台 asyncio 流水线任务只存活于拉起它的 worker 进程内。当 Gunicorn worker 因
 # 部署 / 重启 / OOM 被回收时,在跑的任务会被静默杀死(无错误、无完成),导致前端
-# 进度条永远卡在某阶段。进程刚启动时任何"活跃"状态的任务都必定是孤儿,直接续跑
-# 绝对安全(单 worker 下不会重复拉起)。看门狗则兜底周期性卡死的任务。
+# 进度条永远卡在某阶段。进程刚启动时任何"活跃"状态的任务都必定是孤儿。
+# 注意(关键取舍): 启动自愈**不再并发拉起重型 run_pipeline**(图像生成 rembg 吃数百
+# MB + 视频生成,在 Render 小内存实例上并发会 OOM 杀死唯一 worker -> 502 崩溃循环),
+# 而是将孤儿标记为 FAILED,由用户在 UI 重新生成。看门狗同样仅标记、不拉起。
 @app.on_event("startup")
 async def _startup_self_heal():
     try:
@@ -88,10 +95,11 @@ async def _startup_self_heal():
         recovered = _projects.recover_orphaned_tasks()
         if recovered:
             logging.getLogger(__name__).info(
-                "[Self-Heal] 启动自愈:拉起 %d 个孤儿任务: %s", len(recovered), recovered
+                "[Self-Heal] 启动处置 %d 个孤儿任务(标记 FAILED, 待用户重新生成): %s",
+                len(recovered), recovered,
             )
         else:
-            logging.getLogger(__name__).info("[Self-Heal] 启动未发现需自愈的孤儿任务")
+            logging.getLogger(__name__).info("[Self-Heal] 启动未发现需处置的孤儿任务")
         _projects.start_watchdog()
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).warning("[Self-Heal] 启动自愈异常(已忽略): %s", exc)
@@ -116,12 +124,34 @@ async def shutdown():
     return {"ok": True, "message": "正在关闭 AI 视频印钞机…"}
 
 
+@app.get("/health")
+async def health():
+    """瞬时健康检查:不触碰 DB / ffmpeg / 外部服务,供 Render 健康检查与探活使用。
+
+    返回 200 即代表进程存活、可接收请求 —— 与业务是否正常解耦,避免被重型逻辑拖垮。
+    必须注册在静态目录挂载(尤其是 prefix='/' 的 catch-all)之前,否则会被其吞掉。
+    """
+    return {"status": "ok", "ts": datetime.utcnow().isoformat()}
+
+
 frontend_dir = Path(__file__).parent.parent / "frontend"
 frontend_dir.mkdir(parents=True, exist_ok=True)
 
+
+def _safe_mount(prefix: str, directory: str, name: str, html: bool = False) -> None:
+    """容错挂载静态目录:目录缺失/创建失败都只告警,绝不因此让 import app.main 崩溃。"""
+    try:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        app.mount(prefix, StaticFiles(directory=directory, html=html), name=name)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "[Startup] 挂载静态目录失败 %s -> %s: %s", prefix, directory, exc
+        )
+
+
 # 本地静态文件服务:视频/图片/音频均经本地磁盘访问(无 OSS 依赖)
 # /storage 暴露整个持久化根目录;/outputs、/uploads 保留原有访问前缀
-app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
-app.mount("/outputs", StaticFiles(directory=str(STORAGE_DIR / "outputs")), name="outputs")
-app.mount("/uploads", StaticFiles(directory=str(STORAGE_DIR / "uploads")), name="uploads")
-app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+_safe_mount("/storage", str(STORAGE_DIR), "storage")
+_safe_mount("/outputs", str(STORAGE_DIR / "outputs"), "outputs")
+_safe_mount("/uploads", str(STORAGE_DIR / "uploads"), "uploads")
+_safe_mount("/", str(frontend_dir), "frontend", html=True)

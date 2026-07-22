@@ -328,27 +328,64 @@ def _respawn_orphan(task_id: str, status: str) -> bool:
     return True
 
 
-def recover_orphaned_tasks(stale_seconds: Optional[int] = None) -> list:
-    """扫描并拉起所有孤儿/卡死任务。
+def recover_orphaned_tasks(
+    stale_seconds: Optional[int] = None, resume: bool = False
+) -> list:
+    """扫描孤儿/卡死任务并处置。
 
-    - 进程启动时(不传 stale_seconds):所有处于活跃状态的任务都视为孤儿,直接拉起。
-      此时进程刚启动,任何在跑的后台协程都已随旧进程消亡,拉起绝对安全、不会重复。
-    - 看门狗场景(传 stale_seconds):仅拉起 updated_at 陈旧超过阈值的任务,
-      避免误拉起正在健康推进(尤其视频生成可能持续 5-15 分钟)的任务。
+    - resume=False(默认,启动自愈使用):**不拉起重跑**,而是将孤儿任务标记为 FAILED
+      (错误说明"任务在重启/部署中中断,请重新生成")。原因: 在 Render 等小内存实例上,
+      启动时并发拉起多个重型 run_pipeline(图像生成 rembg 吃数百 MB + 视频生成)极易
+      OOM 杀死唯一的 Gunicorn worker,引发 502 崩溃循环,反而让整个站点不可用。标记
+      FAILED 后站点立即可用,用户在 UI 重新生成即可 —— 这是"站点可用"优先于
+      "任务自动续跑"的取舍(502 全站宕机远比单个任务需手动重跑严重)。
+    - resume=True(看门狗兜底使用):按最后阶段续跑拉起(原行为)。仅对陈旧>阈值任务,
+      且通常在站点空闲时触发,风险可控。
 
-    Returns: 被拉起的任务 task_id 列表。
+    Returns: 被处置的任务 task_id 列表。
     """
     from app.core.database import get_active_tasks
 
     active = get_active_tasks(stale_seconds=stale_seconds)
-    recovered: list = []
+    handled: list = []
     for task_id, status in active:
         try:
-            if _respawn_orphan(task_id, status):
-                recovered.append(task_id)
+            if resume:
+                if _respawn_orphan(task_id, status):
+                    handled.append(task_id)
+            else:
+                if _fail_orphan(task_id, status):
+                    handled.append(task_id)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[recovery] 拉起任务 %s 失败: %s", task_id, exc)
-    return recovered
+            logger.warning("[recovery] 处置任务 %s 失败: %s", task_id, exc)
+    return handled
+
+
+def _fail_orphan(task_id: str, status: str) -> bool:
+    """将孤儿任务标记为 FAILED(不拉起重跑),避免启动时重型并发导致 OOM 崩溃循环。
+
+    任务数据(脚本/分镜/素材 URL)均保留在 SQLite,用户在 UI 重新生成即可,不会丢数据。
+    """
+    project = load_project(task_id)
+    if not project:
+        logger.warning("[recovery] 孤儿任务 %s 无法从 SQLite 重建,跳过", task_id)
+        return False
+    project.status = ProjectStatus.FAILED
+    project.error = (
+        "任务在实例重启/部署过程中被中断,系统已将其标记为失败。"
+        "请在前端重新生成该视频(任务数据未损坏)。"
+    )
+    project.technical_traceback = None
+    project.completed_at = datetime.utcnow().isoformat()
+    try:
+        sync_project_from_model(project)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[recovery] 标记任务 %s 失败状态时写库异常: %s", task_id, exc)
+    logger.info(
+        "[recovery] 孤儿任务 %s (原状态=%s) 已标记为 FAILED,待用户重新生成",
+        task_id, status,
+    )
+    return True
 
 
 async def _watchdog_loop(interval_seconds: int = 300, stale_seconds: int = 3600) -> None:
@@ -363,10 +400,11 @@ async def _watchdog_loop(interval_seconds: int = 300, stale_seconds: int = 3600)
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            recovered = recover_orphaned_tasks(stale_seconds=stale_seconds)
+            recovered = recover_orphaned_tasks(stale_seconds=stale_seconds, resume=False)
             if recovered:
                 logger.warning(
-                    "[watchdog] 拉起 %d 个卡死任务: %s", len(recovered), recovered
+                    "[watchdog] 标记 %d 个卡死任务为 FAILED(待用户重新生成): %s",
+                    len(recovered), recovered,
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("[watchdog] 自愈扫描异常(已忽略): %s", exc)
