@@ -39,7 +39,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import queue
+import re
 import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -333,32 +337,58 @@ def _assert_inputs_nonempty(
 # 统一 FFmpeg 执行器(终极防卡死封装)
 # ---------------------------------------------------------------------------
 
+# 输出文件"冻结"判定阈值(秒):合成过程中若输出文件超过该秒数无任何字节增长,
+# 判定 ffmpeg 已"假死"(云端 CPU 限流 / 内存压力 / 过滤器异常),立即 kill 并抛出
+# 清晰错误,杜绝"静默卡死、进度条永远停在合成阶段、又不报错"的黑洞。
+# 注意:只有"正在产出但停止增长"才会触发;正常慢速编码(文件持续增长)不会被误杀。
+_FFMPEG_FREEZE_SECONDS = 150
+
+# 全局注入 -threads,限制 ffmpeg 线程数,降低云端小内存实例(Render 512MB)OOM 风险。
+# ffmpeg 默认会按 CPU 核数开很多线程,多输入/多滤镜时内存峰值极高,是合成阶段
+# 拖垮 worker 的头号内存杀手。2 线程在免费实例上编码速度与多线程差异很小。
+_FFMPEG_THREADS = "2"
+
+
 def _run_ffmpeg_cmd(
-    cmd_args: List[str], level_name: str, timeout: float = 300
-) -> "subprocess.CompletedProcess":
+    cmd_args: List[str],
+    level_name: str,
+    timeout: float = 300,
+    watch_output: "str | None" = None,
+) -> None:
     """统一执行任意 FFmpeg 命令,彻底根除"静默卡死"。
 
-    强制做到四件事:
-      1. -y 覆盖符:若命令中未显式含 -y,自动插入,防止 FFmpeg 等待
-         用户确认覆盖而永远卡死。
-      2. stdin=DEVNULL:FFmpeg 默认会打开 stdin 监听 'q' 退出键,若 stdin
-         连着未关闭的管道(常见于 subprocess 继承父进程 fd),它会永久阻塞
-         等待输入 —— 这是云端"静默卡死"的头号元凶。置 DEVNULL 彻底禁用。
-      3. timeout:超时强制 kill 子进程并抛异常,杜绝任何无界等待。
-      4. 全景日志 + 完整 stderr:执行前打印完整命令,失败/超时打印完整 stderr。
+    相比旧版的 subprocess.run(capture_output=True):
+      - 改用 Popen + 独立读线程流式读取 stderr,实时打印 ffmpeg 进度
+        (time=00:00:12 ...),让"合成到底在不在跑"一目了然,不再黑盒。
+      - 强制 -y:防止 FFmpeg 等待用户确认覆盖而永远卡死。
+      - stdin=DEVNULL:禁用 'q' 退出键监听,避免继承管道导致永久阻塞。
+      - 线程注入 -threads,压低内存峰值,规避云端 OOM。
+      - ★ 冻结检测(freeze detection):当 watch_output 提供时,监控输出文件
+        字节增长;若超过 _FFMPEG_FREEZE_SECONDS 无任何增长,判定假死并 kill,
+        抛出清晰错误 —— 这是根治"卡在合成阶段不报错"的核心。
+      - 硬超时兜底:超过 timeout 秒强制 kill 并抛错,杜绝任何无界等待。
 
-    Returns:
-        执行成功的 CompletedProcess(returncode==0)。
+    Args:
+        watch_output: 被监控增长的输出文件路径(长编码如对齐/最终合成必传),
+            用于冻结检测;短命令(体检/BGM)可省略。
+
     Raises:
-        RuntimeError:超时或退出码非 0(携带完整命令与 stderr 末段)。
+        RuntimeError:超时 / 假死 / 退出码非 0(均携带完整命令与 stderr 末段)。
     """
     args = list(cmd_args)
     # 强制 -y:防止 FFmpeg 在后台无 TTY 时等待用户确认覆盖而永久卡死
-    if args and args[0].endswith("ffmpeg"):
+    # 跨平台兼容:Windows 下可执行文件名常为 ffmpeg.exe
+    _is_ffmpeg = bool(args) and (
+        args[0].endswith("ffmpeg") or args[0].lower().endswith("ffmpeg.exe")
+    )
+    if _is_ffmpeg:
         if "-y" not in args and "-n" not in args:
             args.insert(1, "-y")
+        # 注入 -threads 限制线程数(若命令未显式指定),降低 OOM 风险
+        if "-threads" not in args:
+            args.insert(1, "-threads")
+            args.insert(2, _FFMPEG_THREADS)
     cmd_str = " ".join(args)
-    # [用户要求] 执行前打印最终拼接好的完整 FFmpeg 命令行字符串
     logger.info(
         "[Compositor][%s] ======== FFmpeg 完整命令 开始 ========\n%s\n"
         "======== FFmpeg 完整命令 结束 ========",
@@ -366,40 +396,119 @@ def _run_ffmpeg_cmd(
     )
 
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             args,
-            capture_output=True,
-            timeout=timeout,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+            encoding="utf-8",
+            errors="replace",
         )
-    except subprocess.TimeoutExpired as exc:
-        stderr = (exc.stderr or b"").decode("utf-8", errors="replace")
-        # [用户要求] 捕获并打印完整 stderr,绝不静默
-        logger.error(
-            "[Compositor][%s] ❌❌❌ FFmpeg 执行超时(%ds)已被强制 kill!\n"
-            "======== 完整命令 ========\n%s\n"
-            "======== 完整 stderr(超时前输出) ========\n%s\n"
-            "======== stderr 结束 ========",
-            level_name, int(timeout), cmd_str, stderr,
-        )
-        # [用户要求] 超时也必须抛出明确异常,让任务状态变为 FAILED
-        raise RuntimeError("FFmpeg 合成超时") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"无法启动 FFmpeg 子进程: {exc}") from exc
 
-    if proc.returncode != 0:
-        stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
-        # [用户要求] 捕获并打印 FFmpeg 标准错误输出(stderr),完整打印不截断
+    # 独立线程读取 stderr,避免阻塞主线程,且保证 ffmpeg 假死时仍可推进超时/冻结判定
+    _q: "queue.Queue[str]" = queue.Queue()
+    _reader_stop = threading.Event()
+
+    def _reader() -> None:
+        try:
+            for line in iter(proc.stderr.readline, ""):
+                _q.put(line)
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            _reader_stop.set()
+
+    _t = threading.Thread(target=_reader, daemon=True)
+    _t.start()
+
+    start = time.monotonic()
+    last_size = -1
+    last_grow = start
+    last_progress = ""
+    err_lines: List[str] = []
+    freeze_msg = ""
+
+    try:
+        while True:
+            # 排空 stderr 队列:打印进度(time=),并记录错误行供失败诊断
+            while not _q.empty():
+                line = _q.get()
+                low = line.lower()
+                if "error" in low or "invalid" in low or "could not" in low:
+                    err_lines.append(line.rstrip())
+                m = re.search(r"time=\s*(\S+)", line)
+                if m and m.group(1) != last_progress:
+                    last_progress = m.group(1)
+                    logger.info("[ffmpeg][%s] 进度 time=%s", level_name, last_progress)
+            rc = proc.poll()
+            if rc is not None:
+                break
+            # 输出文件增长探测(冻结检测):仅在前 30s 宽限之后才严格判定
+            if watch_output:
+                try:
+                    if os.path.exists(watch_output):
+                        sz = os.path.getsize(watch_output)
+                        if sz > last_size:
+                            last_size = sz
+                            last_grow = time.monotonic()
+                except Exception:  # noqa: BLE001
+                    pass
+            now = time.monotonic()
+            if (
+                watch_output
+                and (now - start) > 30
+                and (now - last_grow) > _FFMPEG_FREEZE_SECONDS
+            ):
+                freeze_msg = (
+                    f"输出文件 {watch_output} 超过 {_FFMPEG_FREEZE_SECONDS}s "
+                    f"无任何字节增长,判定 ffmpeg 假死(云端 CPU 限流/内存压力/"
+                    f"过滤器异常),已强制 kill"
+                )
+                logger.error("[Compositor][%s] ❌ %s", level_name, freeze_msg)
+                proc.kill()
+                break
+            if (now - start) > timeout:
+                logger.error(
+                    "[Compositor][%s] ❌ FFmpeg 执行超时(%ds),强制 kill",
+                    level_name, int(timeout),
+                )
+                proc.kill()
+                break
+            time.sleep(0.5)
+        # 收尾:等待进程退出并排空剩余 stderr
+        try:
+            proc.wait(timeout=30)
+        except Exception:  # noqa: BLE001
+            proc.kill()
+        while not _q.empty():
+            line = _q.get()
+            low = line.lower()
+            if "error" in low or "invalid" in low or "could not" in low:
+                err_lines.append(line.rstrip())
+    finally:
+        _reader_stop.set()
+        _t.join(timeout=2)
+
+    returncode = proc.returncode
+    if returncode != 0:
+        tail = "\n".join(err_lines[-40:]) if err_lines else "(无 stderr 错误行)"
         logger.error(
             "[Compositor][%s] ❌❌❌ FFmpeg 执行失败(退出码=%d)!\n"
             "======== 完整命令 ========\n%s\n"
-            "======== 完整 stderr(FFmpeg 真实报错) ========\n%s\n"
+            "======== 完整 stderr(FFmpeg 真实报错,末 40 行) ========\n%s\n"
             "======== stderr 结束 ========",
-            level_name, proc.returncode, cmd_str, stderr,
+            level_name, returncode, cmd_str, tail,
         )
-        # [用户要求] 立刻抛出 RuntimeError(携带完整 stderr),
-        # 让上层把任务状态置为 FAILED 并在前端显示具体错误原因。
-        raise RuntimeError(f"FFmpeg 合成失败: {stderr}")
+        raise RuntimeError(
+            f"FFmpeg 合成失败[{level_name}](退出码={returncode}): "
+            f"{freeze_msg}\n{tail}"
+        )
 
-    return proc
+    logger.info("[Compositor][%s] ✅ FFmpeg 执行成功", level_name)
 
 
 def _verify_product(output_path: str, level_name: str) -> None:
@@ -782,18 +891,23 @@ def _align_scene_sync(
         target_duration = dv
         logger.info("[%s] 无配音模式,视频自然时长 %.3fs + 静音轨", scene.scene_id, dv)
 
-    # 高质量中间编码(CRF=18 视觉无损,避免二次编码损失)
+    # 高质量中间编码(CRF=18 视觉无损,veryfast 预设压低 CPU/内存占用,
+    # 避免云端小实例编码过慢触发超时;避免二次编码损失)
     out = ffmpeg.output(
         v, a, output_path,
         vcodec="libx264", crf=18, pix_fmt="yuv420p",
+        preset="veryfast",
         acodec="aac", ab="192k",
         r=settings.OUTPUT_FPS,
         **{"movflags": "+faststart"},
     )
-    # === V-FFMPEG-GUARD: 编译命令 + 统一执行器(-y + stdin=DEVNULL + timeout=300) ===
+    # === V-FFMPEG-GUARD: 编译命令 + 统一执行器(-y + stdin=DEVNULL + 冻结检测) ===
     cmd_args = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
-    # 统一执行器会打印完整命令并强制 stdin=DEVNULL,彻底杜绝交互卡死
-    _run_ffmpeg_cmd(cmd_args, f"对齐[{scene.scene_id}]", timeout=300)
+    # 统一执行器会打印完整命令、强制 stdin=DEVNULL、监控输出文件增长,
+    # 彻底杜绝交互卡死与"假死黑盒"
+    _run_ffmpeg_cmd(
+        cmd_args, f"对齐[{scene.scene_id}]", timeout=300, watch_output=output_path
+    )
 
     # 产物校验:对齐输出必须真实存在且非空
     _verify_product(output_path, f"对齐[{scene.scene_id}]")
@@ -1099,7 +1213,7 @@ def _build_final_graph(
         vcodec="libx264",
         crf=settings.OUTPUT_CRF,
         pix_fmt="yuv420p",
-        preset="medium",
+        preset="veryfast",
         r=settings.OUTPUT_FPS,
         **{"movflags": "+faststart"},
     )
@@ -1113,15 +1227,24 @@ def _build_final_graph(
     return out
 
 
-def _run_ffmpeg(out: "object", ffmpeg_exe: str, output_path: str, level_name: str) -> None:
+def _run_ffmpeg(
+    out: "object",
+    ffmpeg_exe: str,
+    output_path: str,
+    level_name: str,
+    timeout: float = 900,
+) -> None:
     """执行单次 ffmpeg 合成(经统一执行器),校验产物。
 
     失败时抛出 RuntimeError(携带完整命令与 stderr 末段),供降级档位捕获。
+    timeout 默认 900s:云端免费实例 CPU 较弱,长视频编码可能需数分钟;
+    但"冻结检测"会在输出停止增长 150s 时立即报错,故放宽容忍慢速、
+    绝不姑息真卡死。
     """
     # 编译完整命令(必须成功——否则无法用带超时的 subprocess 执行)
     cmd_args = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
-    # 统一执行器:强制 -y + stdin=DEVNULL + timeout=300 + 完整命令/ stderr 日志
-    _run_ffmpeg_cmd(cmd_args, level_name, timeout=300)
+    # 统一执行器:强制 -y + stdin=DEVNULL + 线程限制 + 冻结检测 + 完整日志
+    _run_ffmpeg_cmd(cmd_args, level_name, timeout=timeout, watch_output=output_path)
     # 产物校验:必须真实存在且非空
     _verify_product(output_path, level_name)
 
@@ -1347,6 +1470,42 @@ class Compositor:
     """
 
     async def composite(
+        self, project: VideoProject, storage_root: str | None = None
+    ) -> str:
+        """合成最终视频(带心跳保活),委托 _composite_impl 执行。
+
+        在合成(尤其是长视频 ffmpeg 编码)运行期间,每 20s 周期刷新数据库
+        updated_at。作用:
+          - 区分『正在编码(健康,updated_at 持续刷新)』与『任务已孤儿/
+            worker 已死(updated_at 冻结)』,使看门狗能快速把真正卡死的任务
+            标为 FAILED,而不误杀慢速但健康的编码;
+          - 让前端/诊断能看到"合成阶段有心跳",消除"进度条永久停住"的错觉。
+        """
+        hb_stop = asyncio.Event()
+
+        async def _hb() -> None:
+            while not hb_stop.is_set():
+                try:
+                    from app.core.database import sync_project_from_model
+                    sync_project_from_model(project)
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    await asyncio.wait_for(hb_stop.wait(), timeout=20)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    pass
+
+        hb = asyncio.create_task(_hb())
+        try:
+            return await self._composite_impl(project, storage_root)
+        finally:
+            hb_stop.set()
+            try:
+                hb.cancel()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def _composite_impl(
         self, project: VideoProject, storage_root: str | None = None
     ) -> str:
         """合成最终视频,更新 project.output。

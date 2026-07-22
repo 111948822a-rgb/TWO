@@ -329,7 +329,7 @@ def _respawn_orphan(task_id: str, status: str) -> bool:
 
 
 def recover_orphaned_tasks(
-    stale_seconds: Optional[int] = None, resume: bool = False
+    stale_seconds: Optional[int] = None, resume: bool = False, status: Optional[str] = None
 ) -> list:
     """扫描孤儿/卡死任务并处置。
 
@@ -342,19 +342,22 @@ def recover_orphaned_tasks(
     - resume=True(看门狗兜底使用):按最后阶段续跑拉起(原行为)。仅对陈旧>阈值任务,
       且通常在站点空闲时触发,风险可控。
 
+    status: 仅处置该状态的任务(看门狗按状态分别设置不同陈旧阈值时使用)。
+    stale_seconds: 陈旧阈值(秒),任务 updated_at 早于该值才视为卡死。
+
     Returns: 被处置的任务 task_id 列表。
     """
     from app.core.database import get_active_tasks
 
-    active = get_active_tasks(stale_seconds=stale_seconds)
+    active = get_active_tasks(stale_seconds=stale_seconds, status=status)
     handled: list = []
-    for task_id, status in active:
+    for task_id, st in active:
         try:
             if resume:
-                if _respawn_orphan(task_id, status):
+                if _respawn_orphan(task_id, st):
                     handled.append(task_id)
             else:
-                if _fail_orphan(task_id, status):
+                if _fail_orphan(task_id, st):
                     handled.append(task_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[recovery] 处置任务 %s 失败: %s", task_id, exc)
@@ -388,24 +391,39 @@ def _fail_orphan(task_id: str, status: str) -> bool:
     return True
 
 
-async def _watchdog_loop(interval_seconds: int = 300, stale_seconds: int = 3600) -> None:
-    """周期看门狗:拉起卡死(updated_at 长期不更新)的活跃任务。
+# 各阶段"卡死"陈旧阈值(秒):updated_at 超过该值仍活跃 → 判定为孤儿/卡死,标记 FAILED。
+# 设计原则:合成阶段已有"心跳"(每 20s 刷新 updated_at),故健康编码绝不会触发;
+# 仅当 worker 已死(updated_at 冻结)才会被捕获。阈值按各阶段真实最长耗时设定,
+# 避免误杀(尤其 VID_GEN 单阶段可长达 ~30 分钟)。
+_STALE_BY_STATUS = {
+    "compositing": 600,   # 合成:心跳保活,健康编码持续刷新;冻结即 worker 死
+    "audio_gen": 600,
+    "img_gen": 900,
+    "scripting": 600,
+    "pending": 600,
+    "vid_gen": 1800,      # 视频生成:串行 3 段,单段轮询上限 ~10min,留足余量
+}
 
-    stale_seconds 必须远大于单个阶段最大耗时:视频生成(VID_GEN)串行 3 段,
-    每段轮询上限 POLL_MAX_ATTEMPTS×POLL_INTERVAL=120×5s=10min,即单阶段最长
-    ~30 分钟。阈值设为 3600s(1 小时),确保任何健康推进中的任务绝不会被误判为
-    卡死而取消/重复拉起;只有真正被遗弃(进程被杀且未触发启动自愈的极端情况)
-    的任务才会在 1 小时后被兜底拉起。
+
+async def _watchdog_loop(interval_seconds: int = 120, stale_seconds: int = 3600) -> None:
+    """周期看门狗:标记卡死(updated_at 长期不更新)的活跃任务为 FAILED。
+
+    按状态分别使用 _STALE_BY_STATUS 中的陈旧阈值,既保证"真卡死"能在数分钟内
+    被识别(不再让用户盯着进度条空等 1 小时),又避免误杀健康推进中的长耗时任务
+    (尤其视频生成)。合成阶段因有心跳保活,正常编码永远不会被误判。
     """
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            recovered = recover_orphaned_tasks(stale_seconds=stale_seconds, resume=False)
-            if recovered:
-                logger.warning(
-                    "[watchdog] 标记 %d 个卡死任务为 FAILED(待用户重新生成): %s",
-                    len(recovered), recovered,
+            for st, secs in _STALE_BY_STATUS.items():
+                recovered = recover_orphaned_tasks(
+                    stale_seconds=secs, status=st, resume=False
                 )
+                if recovered:
+                    logger.warning(
+                        "[watchdog] 标记 %d 个卡死任务(%s)为 FAILED(待用户重新生成): %s",
+                        len(recovered), st, recovered,
+                    )
         except Exception as exc:  # noqa: BLE001
             logger.warning("[watchdog] 自愈扫描异常(已忽略): %s", exc)
 

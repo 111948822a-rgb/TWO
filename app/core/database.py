@@ -429,27 +429,43 @@ def delete_project(task_id: str) -> bool:
     return deleted
 
 
-def get_active_tasks(stale_seconds: Optional[int] = None) -> list[tuple]:
+def get_active_tasks(
+    stale_seconds: Optional[int] = None, status: Optional[str] = None
+) -> list[tuple]:
     """返回处于活跃(未终态)的任务 [(task_id, status), ...]。
 
     stale_seconds 指定时,仅返回 updated_at 早于 cutoff 的任务(用于看门狗判断卡死)。
     未指定时返回全部活跃任务(用于进程启动时的孤儿任务自愈)。
+    status 指定时仅筛选该状态(用于看门狗按状态分别设置不同陈旧阈值)。
     """
     placeholders = ",".join("?" * len(_ACTIVE_STATUSES))
     with _get_conn() as conn:
         if stale_seconds is None:
-            rows = conn.execute(
-                f"SELECT task_id, status FROM projects "
-                f"WHERE status IN ({placeholders})",
-                _ACTIVE_STATUSES,
-            ).fetchall()
+            if status:
+                rows = conn.execute(
+                    "SELECT task_id, status FROM projects WHERE status = ?",
+                    (status,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT task_id, status FROM projects "
+                    f"WHERE status IN ({placeholders})",
+                    _ACTIVE_STATUSES,
+                ).fetchall()
         else:
             cutoff = (datetime.utcnow() - timedelta(seconds=stale_seconds)).isoformat()
-            rows = conn.execute(
-                f"SELECT task_id, status FROM projects "
-                f"WHERE status IN ({placeholders}) AND updated_at < ?",
-                (*_ACTIVE_STATUSES, cutoff),
-            ).fetchall()
+            if status:
+                rows = conn.execute(
+                    "SELECT task_id, status FROM projects "
+                    "WHERE status = ? AND updated_at < ?",
+                    (status, cutoff),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT task_id, status FROM projects "
+                    f"WHERE status IN ({placeholders}) AND updated_at < ?",
+                    (*_ACTIVE_STATUSES, cutoff),
+                ).fetchall()
     return [(r["task_id"], r["status"]) for r in rows]
 
 
