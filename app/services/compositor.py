@@ -197,14 +197,90 @@ def _escape_drawtext_text(text: str) -> str:
 # 阶段 A:素材下载与 BGM 准备
 # ---------------------------------------------------------------------------
 
-async def _download_file(url: str, output_path: str, timeout: float = 120.0) -> str:
-    """异步下载文件到本地。"""
+def _looks_like_video(path: str) -> bool:
+    """粗略判断本地文件是否像真实视频(而非错误页/HTML/空壳)。
+
+    真实 MP4/MOV 文件头部必含 'ftyp' box;WebM/MKV 以 EBML 头
+    0x1A 0x45 0xDF 0x3A 开头。若下载到的是 403/404 的 HTML 错误页
+    (常 >10KB,会绕过纯体积校验),用它能在交给 FFmpeg 前识破,
+    给出清晰报错而非"输入文件无效: 0B"。
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(32)
+    except Exception:
+        return False
+    if not head:
+        return False
+    if b"ftyp" in head:          # MP4 / MOV / M4V
+        return True
+    if head[:4] == b"\x1a\x45\xdf\x3a":  # WebM / MKV (EBML)
+        return True
+    return False
+
+
+async def _download_file(
+    url: str, output_path: str, timeout: float = 120.0, max_retries: int = 3
+) -> str:
+    """异步下载文件到本地。
+
+    ★ 根因修复(V17.7):httpx 默认 **不** 跟随 302 重定向。DashScope 视频结果
+    URL 是阿里云 OSS 签名链接,会 302 跳转到真实文件。若不 follow_redirects,
+    拿到的是 302 响应体(常为 0 字节),写入磁盘后文件为空 → 合成阶段报
+    "输入文件无效: 大小仅 0B (疑似空壳/截断损坏)"。现已强制 follow_redirects=True,
+    并在写入后做体积 + 视频特征双重校验,失败自动重试,彻底根治 0 字节下载。
+
+    任何失败(重定向未跟随 / 链接失效 403 / 空响应 / 非视频错误页)都会携带
+    URL 抛出清晰异常,不再让 FFmpeg 去处理坏文件。
+    """
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15.0)) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        Path(output_path).write_bytes(resp.content)
-    return output_path
+    last_err: Exception | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout, connect=15.0),
+                follow_redirects=True,   # ← 关键:跟随 OSS 302 跳转拿到真实视频
+            ) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                data = resp.content
+
+            # 空响应体(典型:302 未跟随 / 链接失效但返回空 body)直接判失败重试
+            if not data or len(data) < 1024:
+                raise RuntimeError(
+                    f"下载返回空/过小响应(仅 {len(data) if data else 0} 字节),"
+                    f"疑似 302 跳转未跟随或链接已失效"
+                )
+            Path(output_path).write_bytes(data)
+
+            # 落盘后再校验:体积达标 且 看起来像真实视频(排除 HTML 错误页)
+            if not _verify_file(output_path, min_bytes=1024):
+                raise RuntimeError(f"文件落盘后校验失败(不存在或过小): {output_path}")
+            if not _looks_like_video(output_path):
+                # 体积够大但不是视频(典型:403/404 的 HTML 错误页)→ 明确报错
+                size = Path(output_path).stat().st_size
+                raise RuntimeError(
+                    f"下载到的不是视频文件(疑似错误页/HTML),体积 {size}B,"
+                    f"无法用于合成,URL={url}"
+                )
+            logger.info(
+                "[Download] ✅ 下载成功(%s, %d 字节): %s",
+                host, len(data), output_path,
+            )
+            return output_path
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            logger.warning(
+                "[Download] 第 %d/%d 次下载失败: %s | url=%s",
+                attempt, max_retries, exc, url,
+            )
+            if attempt < max_retries:
+                await asyncio.sleep(min(2.0 * attempt, 8.0))
+
+    raise RuntimeError(
+        f"下载文件失败(已重试 {max_retries} 次): {url} | 最后错误: {last_err}"
+    )
 
 
 def _verify_file(path: str, min_bytes: int = 1) -> bool:
@@ -367,18 +443,26 @@ async def _prepare_assets(
         download_tasks.append(_download_file(clip.url, dst))
 
     logger.info("[%s] 下载 %d 个视频片段...", project.project_id, len(download_tasks))
-    downloaded = await asyncio.gather(*download_tasks)
+    try:
+        downloaded = await asyncio.gather(*download_tasks)
+    except Exception as exc:  # noqa: BLE001
+        # _download_file 已携带 URL 与最后错误,这里仅补充分镜上下文
+        raise RuntimeError(
+            f"分镜视频下载阶段失败(URL 可能失效/不可达): {exc}"
+        ) from exc
     # 强制校验:每个视频本地文件必须真实存在且非空(防"无米之炊")
     for scene, path in zip(project.scenes, downloaded):
         if not _verify_file(path, min_bytes=1024):
             logger.warning(
-                "[%s] 分镜 %s 首次下载疑似空文件,重试一次: %s",
+                "[%s] 分镜 %s 下载后疑似空文件,重试一次: %s (url=%s)",
                 project.project_id, scene.scene_id, path,
+                scene.assets.video_clip.url,
             )
             await _download_file(scene.assets.video_clip.url, path)
         if not _verify_file(path, min_bytes=1024):
             raise RuntimeError(
-                f"分镜 {scene.scene_id} 视频下载失败或文件为空: {path}"
+                f"分镜 {scene.scene_id} 视频下载失败或文件为空: {path} "
+                f"(url={scene.assets.video_clip.url})"
             )
     logger.info("[%s] 视频片段下载完成并校验通过", project.project_id)
 

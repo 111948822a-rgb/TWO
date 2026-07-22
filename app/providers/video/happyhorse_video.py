@@ -97,7 +97,7 @@ async def _download_bytes(url: str) -> bytes:
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True
     ) as client:
-        resp = await client.get(url)
+        resp = await client.get(url, follow_redirects=True)
         if resp.status_code < 200 or resp.status_code >= 300:
             raise RuntimeError(
                 f"关键帧图片源 URL 下载失败 (HTTP {resp.status_code}): {url}"
