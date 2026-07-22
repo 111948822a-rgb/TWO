@@ -265,8 +265,8 @@ async def _download_file(
                     f"无法用于合成,URL={url}"
                 )
             logger.info(
-                "[Download] ✅ 下载成功(%s, %d 字节): %s",
-                host, len(data), output_path,
+                "[Download] ✅ 下载成功(%d 字节): %s",
+                len(data), output_path,
             )
             return output_path
         except Exception as exc:  # noqa: BLE001
