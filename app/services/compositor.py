@@ -81,17 +81,37 @@ def _get_ffmpeg_exe() -> str:
     return ensure_ffmpeg_exe()
 
 
-# V11.0 视频比例 -> 目标分辨率映射
+# V11.0 视频比例 -> 目标分辨率映射(基准 1080p)
+# 云端(Render 免费实例 CPU/内存极小)编码 1080p 竖屏极易超时/OOM,
+# 故云端把长边压到 1280(=720x1280 竖屏 / 1280x720 横屏),像素量降为原 1080p 的
+# 1/2.25 → 编码速度约 2 倍、内存峰值约 1/2,彻底规避合成卡死/OOM;本地桌面保持原画质。
 _ASPECT_RESOLUTIONS = {
     "9:16": (1080, 1920),   # 竖屏/TikTok
     "16:9": (1920, 1080),   # 横屏/YouTube
     "1:1": (1080, 1080),    # 方形/Feed
 }
 
+# 云端编码长边上限(检测到 RENDER_EXTERNAL_URL 即视为云端):长边压到 1280
+_CLOUD_ENCODE_LONG_EDGE = 1280
+_LOCAL_ENCODE_LONG_EDGE = 1920  # 本地保持原 1080p 基准(长边 1920)
+
+
+def _encode_long_edge() -> int:
+    return _CLOUD_ENCODE_LONG_EDGE if os.getenv("RENDER_EXTERNAL_URL") else _LOCAL_ENCODE_LONG_EDGE
+
 
 def _get_aspect_resolution(aspect_ratio: str) -> tuple[int, int]:
-    """根据视频比例返回目标 (width, height),默认 9:16。"""
-    return _ASPECT_RESOLUTIONS.get(aspect_ratio, (1080, 1920))
+    """根据视频比例返回目标 (width, height),默认 9:16。
+
+    云端(Render)把长边压到 1280(不放大;1:1 等原尺寸已较小则保持),本地桌面保持原画质,
+    兼顾画质与编码速度/内存。返回偶数尺寸(H.264 兼容)。
+    """
+    base_w, base_h = _ASPECT_RESOLUTIONS.get(aspect_ratio, (1080, 1920))
+    long_edge = _encode_long_edge()
+    scale = min(1.0, long_edge / max(base_w, base_h))
+    w = int(round(base_w * scale / 2) * 2)
+    h = int(round(base_h * scale / 2) * 2)
+    return (w, h)
 
 
 # ---------------------------------------------------------------------------
@@ -348,12 +368,19 @@ _FFMPEG_FREEZE_SECONDS = 150
 # 拖垮 worker 的头号内存杀手。2 线程在免费实例上编码速度与多线程差异很小。
 _FFMPEG_THREADS = "2"
 
+# 合成阶段绝对硬上限(秒):无论冻结检测、单步 timeout 是否生效,合成整体超过该
+# 时长必定强制终止并报错。此上限独立于心跳保活(心跳只刷新 updated_at,无法使其失效),
+# 是"绝不让任务永久卡在 COMPOSITING 不报错"的最后一道保险。云端免费实例极慢,
+# 给到 30 分钟余量;正常 720p 合成通常 3~8 分钟,远低于此。
+_COMPOSITE_HARD_CAP = 1800
+
 
 def _run_ffmpeg_cmd(
     cmd_args: List[str],
     level_name: str,
     timeout: float = 300,
     watch_output: "str | None" = None,
+    deadline: "float | None" = None,
 ) -> None:
     """统一执行任意 FFmpeg 命令,彻底根除"静默卡死"。
 
@@ -458,6 +485,17 @@ def _run_ffmpeg_cmd(
                 except Exception:  # noqa: BLE001
                     pass
             now = time.monotonic()
+            # ★ 绝对硬上限:即便冻结检测与单步 timeout 全部失效(极端异常),
+            #   一旦超过 deadline 也强制 kill 并抛出清晰错误,绝不让"合成阶段"
+            #   无限期挂起而不报错(此上限独立于心跳,心跳无法使其失效)。
+            if deadline and now > deadline:
+                freeze_msg = (
+                    f"合成整体超过硬上限 {int(now - start)}s 仍未完成,强制终止"
+                    f"(云端实例过慢/资源不足,建议降低分辨率或升级实例)"
+                )
+                logger.error("[Compositor][%s] ❌ %s", level_name, freeze_msg)
+                proc.kill()
+                break
             if (
                 watch_output
                 and (now - start) > 30
@@ -529,7 +567,7 @@ def _verify_product(output_path: str, level_name: str) -> None:
     )
 
 
-def _ffmpeg_health_check(storage_root: str) -> None:
+def _ffmpeg_health_check(storage_root: str, deadline: "float | None" = None) -> None:
     """FFmpeg 环境独立体检(V-XRAY #3)。
 
     在最终复杂合成之前,先用 FFmpeg 生成一个 1 秒纯黑测试视频。若生成失败,
@@ -546,7 +584,7 @@ def _ffmpeg_health_check(storage_root: str) -> None:
     ]
     logger.info("[FFmpeg 体检] 开始生成 1 秒黑场测试视频: %s", test_path)
     try:
-        _run_ffmpeg_cmd(cmd, "FFmpeg体检", timeout=60)
+        _run_ffmpeg_cmd(cmd, "FFmpeg体检", timeout=60, deadline=deadline)
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
             f"[FFmpeg 体检失败] 无法生成测试视频(FFmpeg 环境损坏或 "
@@ -758,6 +796,7 @@ def _align_scene_sync(
     ffmpeg_exe: str,
     has_audio: bool = True,
     aspect_ratio: str = "9:16",
+    deadline: "float | None" = None,
 ) -> str:
     """单分镜音画对齐(同步阻塞,供 asyncio.to_thread 调用)。
 
@@ -891,11 +930,12 @@ def _align_scene_sync(
         target_duration = dv
         logger.info("[%s] 无配音模式,视频自然时长 %.3fs + 静音轨", scene.scene_id, dv)
 
-    # 高质量中间编码(CRF=18 视觉无损,veryfast 预设压低 CPU/内存占用,
-    # 避免云端小实例编码过慢触发超时;避免二次编码损失)
+    # 中间编码(CRF=23 足够:对齐产物会在最终合成阶段被 xfade 重新编码,
+    # 此处质量损失不影响成片;veryfast 预设压低 CPU/内存占用,避免云端小实例
+    # 编码过慢触发超时/OOM)。
     out = ffmpeg.output(
         v, a, output_path,
-        vcodec="libx264", crf=18, pix_fmt="yuv420p",
+        vcodec="libx264", crf=23, pix_fmt="yuv420p",
         preset="veryfast",
         acodec="aac", ab="192k",
         r=settings.OUTPUT_FPS,
@@ -906,7 +946,8 @@ def _align_scene_sync(
     # 统一执行器会打印完整命令、强制 stdin=DEVNULL、监控输出文件增长,
     # 彻底杜绝交互卡死与"假死黑盒"
     _run_ffmpeg_cmd(
-        cmd_args, f"对齐[{scene.scene_id}]", timeout=300, watch_output=output_path
+        cmd_args, f"对齐[{scene.scene_id}]", timeout=300,
+        watch_output=output_path, deadline=deadline,
     )
 
     # 产物校验:对齐输出必须真实存在且非空
@@ -922,6 +963,7 @@ async def _align_all_scenes(
     video_paths: List[str],
     audio_paths: List[str],
     storage_root: str,
+    deadline: "float | None" = None,
 ) -> List[str]:
     """并行对所有分镜执行音画对齐,返回对齐后的 MP4 路径列表(按分镜顺序)。
 
@@ -935,7 +977,7 @@ async def _align_all_scenes(
     async def _one(scene: Scene, vp: str, ap: str) -> str:
         out = str(temp_dir / f"{scene.scene_id}_aligned.mp4")
         await asyncio.to_thread(
-            _align_scene_sync, scene, vp, ap, out, ffmpeg_exe, has_audio, aspect_ratio
+            _align_scene_sync, scene, vp, ap, out, ffmpeg_exe, has_audio, aspect_ratio, deadline
         )
         return out
 
@@ -954,7 +996,8 @@ async def _align_all_scenes(
 # ---------------------------------------------------------------------------
 
 def _concat_voiceover(
-    audio_paths: List[str], output_path: str, storage_root: str
+    audio_paths: List[str], output_path: str, storage_root: str,
+    deadline: "float | None" = None,
 ) -> str:
     """用 ffmpeg concat demuxer 拼接所有分镜旁白为单条 voiceover.mp3。
 
@@ -979,7 +1022,7 @@ def _concat_voiceover(
         output_path,
     ]
     logger.info("[Compositor] voiceover 拼接命令: %s", " ".join(cmd))
-    _run_ffmpeg_cmd(cmd, "voiceover拼接", timeout=120)
+    _run_ffmpeg_cmd(cmd, "voiceover拼接", timeout=120, deadline=deadline)
     logger.info("[Compositor] voiceover 拼接完成: %s", output_path)
     return output_path
 
@@ -1233,6 +1276,7 @@ def _run_ffmpeg(
     output_path: str,
     level_name: str,
     timeout: float = 900,
+    deadline: "float | None" = None,
 ) -> None:
     """执行单次 ffmpeg 合成(经统一执行器),校验产物。
 
@@ -1244,7 +1288,7 @@ def _run_ffmpeg(
     # 编译完整命令(必须成功——否则无法用带超时的 subprocess 执行)
     cmd_args = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
     # 统一执行器:强制 -y + stdin=DEVNULL + 线程限制 + 冻结检测 + 完整日志
-    _run_ffmpeg_cmd(cmd_args, level_name, timeout=timeout, watch_output=output_path)
+    _run_ffmpeg_cmd(cmd_args, level_name, timeout=timeout, watch_output=output_path, deadline=deadline)
     # 产物校验:必须真实存在且非空
     _verify_product(output_path, level_name)
 
@@ -1254,6 +1298,7 @@ def _compose_ultra_minimal(
     output_path: str,
     ffmpeg_exe: str,
     aspect_ratio: str = "9:16",
+    deadline: "float | None" = None,
 ) -> None:
     """极简保底合成:仅把分镜 MP4 顺序拼接成可播放视频(不加任何字幕/音频/转场)。
 
@@ -1273,7 +1318,7 @@ def _compose_ultra_minimal(
 
     if len(valid) == 1:
         cmd = [ffmpeg_exe, "-y", "-i", valid[0], "-c", "copy", output_path]
-        _run_ffmpeg_cmd(cmd, "L4_极简拼接(单分镜)", timeout=300)
+        _run_ffmpeg_cmd(cmd, "L4_极简拼接(单分镜)", timeout=300, deadline=deadline)
         _verify_product(output_path, "L4_极简拼接")
         return
 
@@ -1288,7 +1333,7 @@ def _compose_ultra_minimal(
         "-i", list_path, "-c", "copy", output_path,
     ]
     try:
-        _run_ffmpeg_cmd(copy_cmd, "L4_极简拼接(copy)", timeout=300)
+        _run_ffmpeg_cmd(copy_cmd, "L4_极简拼接(copy)", timeout=300, deadline=deadline)
         _verify_product(output_path, "L4_极简拼接")
         return
     except Exception as copy_exc:  # noqa: BLE001
@@ -1311,7 +1356,7 @@ def _compose_ultra_minimal(
         **{"movflags": "+faststart"},
     )
     re_cmd = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
-    _run_ffmpeg_cmd(re_cmd, "L4_极简拼接(重编码)", timeout=300)
+    _run_ffmpeg_cmd(re_cmd, "L4_极简拼接(重编码)", timeout=300, deadline=deadline)
     _verify_product(output_path, "L4_极简拼接")
 
 
@@ -1324,6 +1369,7 @@ def _compose_final_sync(
     output_path: str,
     storage_root: str,
     ffmpeg_exe: str,
+    deadline: "float | None" = None,
 ) -> str:
     """最终合成(同步阻塞)——带三级降级档位,保证"只要有分镜视频就出 MP4"。
 
@@ -1426,7 +1472,7 @@ def _compose_final_sync(
                 sub_segments, sub_fontfile, sub_font_size, sub_margin, vid_h,
                 hook_text, voiceover_path, voiceover_ok, opts,
             )
-            _run_ffmpeg(out, ffmpeg_exe, output_path, lvl_name)
+            _run_ffmpeg(out, ffmpeg_exe, output_path, lvl_name, timeout=1500, deadline=deadline)
             logger.warning(
                 "[Compositor] ✅ 合成成功(档位=%s): %s", lvl_name, output_path
             )
@@ -1445,7 +1491,8 @@ def _compose_final_sync(
     )
     try:
         _compose_ultra_minimal(
-            aligned_paths, output_path, ffmpeg_exe, project.input.aspect_ratio
+            aligned_paths, output_path, ffmpeg_exe, project.input.aspect_ratio,
+            deadline=deadline,
         )
         logger.warning(
             "[Compositor] ✅ 极简保底合成成功(档位=L4_极简拼接): %s", output_path
@@ -1527,6 +1574,8 @@ class Compositor:
 
         ffmpeg_exe = _get_ffmpeg_exe()
         has_voiceover = project.input.enable_voiceover
+        # 合成整体绝对硬上限(独立于心跳):一旦超过必定报错,杜绝"永久卡在合成"
+        composite_deadline = time.monotonic() + _COMPOSITE_HARD_CAP
 
         # ---- FFmpeg 环境自检:确认可执行文件能真正运行,而非仅路径存在 ----
         try:
@@ -1546,7 +1595,7 @@ class Compositor:
             ) from ffchk
 
         # ---- FFmpeg 独立体检:先生成 1 秒黑场测试视频,确保运行环境/写入权限 OK ----
-        _ffmpeg_health_check(storage_root)
+        _ffmpeg_health_check(storage_root, deadline=composite_deadline)
 
         logger.info(
             "[%s] 阶段⑤ 合成开始(ffmpeg: %s, 配音=%s)",
@@ -1586,7 +1635,8 @@ class Compositor:
         # 阶段 B:音画对齐(并行)
         try:
             aligned_paths = await _align_all_scenes(
-                project, video_paths, audio_paths, storage_root
+                project, video_paths, audio_paths, storage_root,
+                deadline=composite_deadline,
             )
         except Exception as align_exc:  # noqa: BLE001
             # 对齐阶段任一分镜异常(含超时)不得让整条流水线失败——
@@ -1610,7 +1660,7 @@ class Compositor:
         if has_voiceover:
             srt_path = str(Path(storage_root) / "temp" / f"{project.project_id}.srt")
             voiceover_path = str(Path(storage_root) / "temp" / "voiceover.mp3")
-            _concat_voiceover(audio_paths, voiceover_path, storage_root)
+            _concat_voiceover(audio_paths, voiceover_path, storage_root, deadline=composite_deadline)
             _generate_srt(project, srt_path)
         else:
             logger.info("[%s] 配音关闭,跳过 voiceover 拼接与 SRT 生成(srt_path=None)", project.project_id)
@@ -1631,6 +1681,7 @@ class Compositor:
             _compose_final_sync,
             project, aligned_paths, audio_paths, bgm_path,
             srt_path, output_path, storage_root, ffmpeg_exe,
+            composite_deadline,
         )
 
         # 更新 project 输出

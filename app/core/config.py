@@ -100,6 +100,9 @@ if os.getenv("RENDER_EXTERNAL_URL"):
     settings.DATA_ROOT = "/data/db"
     settings.STORAGE_ROOT = "/data/storage"
     settings.DATABASE_URL = "sqlite:////data/db/data.db"
+    # 云端免费实例 CPU/内存极小:放宽最终成片 CRF(20→23)以加速编码、降低 OOM 风险,
+    # 短视频平台对 23 画质完全可接受;本地桌面仍用 20 保高画质。
+    settings.OUTPUT_CRF = 23
     print(
         f"☁️ [Config] 云端模式(Render): 存储锁定 /data "
         f"(DATA={settings.DATA_ROOT}, STORAGE={settings.STORAGE_ROOT})",
