@@ -263,21 +263,27 @@ async def _download_file(
 
     for attempt in range(1, max_retries + 1):
         try:
+            # 流式下载直落盘(httpx stream + aiter_bytes),避免把整段视频读进
+            # 内存。512MB 实例上旧版 resp.content 把 5 段视频(~25MB)同时驻留,
+            # 叠加 ffmpeg 易触发 OOM。流式后单段内存仅 ~64KB 缓冲。
+            total = 0
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(timeout, connect=15.0),
                 follow_redirects=True,   # ← 关键:跟随 OSS 302 跳转拿到真实视频
             ) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                data = resp.content
+                async with client.stream("GET", url) as resp:
+                    resp.raise_for_status()
+                    with open(output_path, "wb") as fh:
+                        async for chunk in resp.aiter_bytes(chunk_size=65536):
+                            fh.write(chunk)
+                            total += len(chunk)
 
             # 空响应体(典型:302 未跟随 / 链接失效但返回空 body)直接判失败重试
-            if not data or len(data) < 1024:
+            if total < 1024:
                 raise RuntimeError(
-                    f"下载返回空/过小响应(仅 {len(data) if data else 0} 字节),"
+                    f"下载返回空/过小响应(仅 {total} 字节),"
                     f"疑似 302 跳转未跟随或链接已失效"
                 )
-            Path(output_path).write_bytes(data)
 
             # 落盘后再校验:体积达标 且 看起来像真实视频(排除 HTML 错误页)
             if not _verify_file(output_path, min_bytes=1024):
@@ -291,7 +297,7 @@ async def _download_file(
                 )
             logger.info(
                 "[Download] ✅ 下载成功(%d 字节): %s",
-                len(data), output_path,
+                total, output_path,
             )
             return output_path
         except Exception as exc:  # noqa: BLE001
@@ -623,7 +629,12 @@ async def _prepare_assets(
 
     logger.info("[%s] 下载 %d 个视频片段...", project.project_id, len(download_tasks))
     try:
-        downloaded = await asyncio.gather(*download_tasks)
+        # 串行下载(而非 asyncio.gather 并发):512MB 实例上避免多段视频同时占用
+        # 内存/连接;配合流式落盘,单段内存仅 ~64KB 缓冲,峰值可控。下载耗时可忽略
+        # (远小于 ffmpeg 编码时间),换取内存稳定性非常划算。
+        downloaded = []
+        for _t in download_tasks:
+            downloaded.append(await _t)
     except Exception as exc:  # noqa: BLE001
         # _download_file 已携带 URL 与最后错误,这里仅补充分镜上下文
         raise RuntimeError(

@@ -67,6 +67,13 @@ def _sync_db(project: VideoProject) -> None:
         sync_project_from_model(project)
 
 
+# V19.2: 全局合成并发信号量 —— 任一时刻仅允许 1 个 ffmpeg 合成在跑(跨所有任务,
+# 含用户触发的正常任务 + 开机自动续跑任务)。512MB 实例上 2 路合成并发必 OOM,
+# 此信号量把内存峰值压到单路,是根治"合成 OOM"的关键。
+# vid_gen/img_gen 等阶段多为等外部 API(低内存),不在此约束内,可并发。
+_composite_semaphore = asyncio.Semaphore(1)
+
+
 # ---------------------------------------------------------------------------
 # V-XRAY: 全链路产物"生死追踪"
 #   用户核心质疑: HappyHorse / TTS 返回云端 URL,代码是否真的把文件下载到
@@ -672,7 +679,9 @@ async def stage_compositing(project: VideoProject) -> None:
 
     try:
         compositor = Compositor()
-        output_path = await compositor.composite(project)
+        # 全局串行:512MB 实例上同时只跑 1 个合成,杜绝并发 ffmpeg 导致 OOM
+        async with _composite_semaphore:
+            output_path = await compositor.composite(project)
     except Exception as _comp_exc:  # noqa: BLE001
         # [用户要求] 状态机兜底保活:合成抛出异常时,立刻把具体错误(含 FFmpeg
         # stderr)写入 error 字段,并由外层 run_pipeline 统一置为 FAILED +
