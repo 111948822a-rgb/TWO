@@ -32,3 +32,6 @@ data/*
 bin/ffmpeg.exe
 # 本地验证脚本(非部署产物)
 scripts/
+
+# Windows 保留设备名残留文件(无法删除,仅本地,勿提交)
+nul
