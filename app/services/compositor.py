@@ -1314,6 +1314,239 @@ def _run_ffmpeg(
     # 产物校验:必须真实存在且非空
     _verify_product(output_path, level_name)
 
+# ---------------------------------------------------------------------------
+# Logo 品牌动画
+# ---------------------------------------------------------------------------
+
+# 默认 Logo 路径候选(容器/本地开发/相对路径),按顺序优先使用第一个存在的
+_DEFAULT_LOGO_CANDIDATES = [
+    "/app/assets/logo.png",
+    "assets/logo.png",
+    os.path.join(os.path.dirname(__file__), "..", "..", "assets", "logo.png"),
+]
+
+
+def _resolve_logo_path(project: VideoProject) -> Optional[str]:
+    """解析项目/默认 Logo 图片路径。返回 None 表示没有可用 Logo。"""
+    # 项目级显式指定路径优先(未来可扩展上传自定义 Logo)
+    if project.logo_local_path and Path(project.logo_local_path).exists():
+        return str(Path(project.logo_local_path).resolve())
+    for cand in _DEFAULT_LOGO_CANDIDATES:
+        if Path(cand).exists():
+            return str(Path(cand).resolve())
+    return None
+
+
+def _build_logo_clip(
+    logo_path: str,
+    output_path: str,
+    width: int,
+    height: int,
+    duration: float,
+    animation: str,
+    ffmpeg_exe: str,
+    deadline: "float | None" = None,
+) -> None:
+    """生成一段纯色背景 + Logo 动画的片头/片尾视频。
+
+    云端 512MB 实例下保持轻量:
+      - 背景为黑色,Logo 居中,占画面高度 40%
+      - 动画只有 fade/zoom/slide/none 四种,filter 复杂度最低
+      - 输出 H.264 yuv420p,与主视频编码一致,便于 concat demuxer -c copy
+    """
+    half = duration / 2.0
+    fade_in_d = min(0.5, half)
+    fade_out_d = min(0.5, half)
+    fade_out_st = max(0.0, duration - fade_out_d)
+
+    # Logo 高度占画面 40%,保持透明通道
+    logo_h = int(height * 0.4)
+
+    # 动画 filter(在 logo 输入上处理,再 overlay 到黑色背景)
+    if animation == "zoom":
+        # 缓慢从 0.8 放大到 1.0(仅缩放到 0.95,避免边缘裁切)
+        logo_anim = (
+            f"format=rgba,scale=-2:{logo_h}:flags=lanczos,"
+            f"zoompan=z='min(zoom+0.003,1.2)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)',"
+            f"fade=t=in:st=0:d={fade_in_d:.2f},"
+            f"fade=t=out:st={fade_out_st:.2f}:d={fade_out_d:.2f}"
+        )
+    elif animation == "slide":
+        # 从左侧 10% 位置滑入中央,全程淡入淡出
+        logo_anim = (
+            f"format=rgba,scale=-2:{logo_h}:flags=lanczos,"
+            f"fade=t=in:st=0:d={fade_in_d:.2f},"
+            f"fade=t=out:st={fade_out_st:.2f}:d={fade_out_d:.2f}"
+        )
+    elif animation == "none":
+        logo_anim = f"format=rgba,scale=-2:{logo_h}:flags=lanczos"
+    else:  # fade(默认)
+        logo_anim = (
+            f"format=rgba,scale=-2:{logo_h}:flags=lanczos,"
+            f"fade=t=in:st=0:d={fade_in_d:.2f},"
+            f"fade=t=out:st={fade_out_st:.2f}:d={fade_out_d:.2f}"
+        )
+
+    if animation == "slide":
+        # 滑入: x 从 -w*0.8 到 (W-w)/2, t 0~duration/2 进入, 之后保持
+        overlay_x = (
+            f"if(lte(t,{half}),(W-w)/2*(t/{half})-w*0.2,(W-w)/2)"
+        )
+    else:
+        overlay_x = "(W-w)/2"
+
+    filter_complex = (
+        f"[0:v]{logo_anim}[logo];"
+        f"[1:v][logo]overlay={overlay_x}:(H-h)/2:format=auto,format=yuv420p[v]"
+    )
+
+    cmd = [
+        ffmpeg_exe, "-y",
+        "-loop", "1", "-i", logo_path,           # 输入 0: logo 图片
+        "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:d={duration}",  # 输入 1: 黑背景
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",  # 输入 2: 静音音频(方便 concat)
+        "-filter_complex", filter_complex,
+        "-map", "[v]", "-map", "2:a",
+        "-c:v", "libx264", "-crf", "23",
+        "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+        "-r", str(settings.OUTPUT_FPS),
+        "-c:a", "aac", "-ab", "192k",
+        "-t", str(duration),
+        output_path,
+    ]
+    _run_ffmpeg_cmd(cmd, f"logo_clip({animation})", timeout=120, deadline=deadline)
+    _verify_product(output_path, "logo_clip")
+
+
+def _probe_video_duration(path: str, ffmpeg_exe: str) -> float:
+    """用 ffprobe 探测视频时长,失败返回 0。"""
+    ffprobe_exe = ffmpeg_exe.replace("ffmpeg", "ffprobe")
+    if not Path(ffprobe_exe).exists():
+        # 部分 imageio-ffmpeg 包只带 ffmpeg 不带 ffprobe,回退从文件名估算/不报错
+        ffprobe_exe = "ffprobe"
+    try:
+        out = subprocess.run(
+            [ffprobe_exe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+        return float(out.stdout.strip()) if out.stdout.strip() else 0.0
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def _attach_logo(
+    project: VideoProject,
+    main_video_path: str,
+    output_path: str,
+    ffmpeg_exe: str,
+    deadline: "float | None" = None,
+) -> str:
+    """在主视频前后/全程附加 Logo 动画。失败时直接返回原视频路径,不阻断成片。"""
+    if not project.logo_enabled or project.logo_position in (None, "", "none"):
+        return main_video_path
+
+    logo_path = _resolve_logo_path(project)
+    if not logo_path:
+        logger.warning("[Compositor] Logo 功能已启用但未找到 logo 图片,跳过")
+        return main_video_path
+
+    pos = project.logo_position
+    width, height = _get_aspect_resolution(project.input.aspect_ratio)
+
+    try:
+        if pos == "watermark":
+            # 右下角水印,透明度 0.5,占画面高度 10%
+            wm_h = int(height * 0.10)
+            cmd = [
+                ffmpeg_exe, "-y", "-i", main_video_path,
+                "-loop", "1", "-i", logo_path,
+                "-filter_complex",
+                f"[1:v]format=rgba,colorchannelmixer=aa=0.5,scale=-2:{wm_h}[logo];"
+                f"[0:v][logo]overlay=W-w-16:H-h-16:format=auto[v]",
+                "-map", "[v]", "-map", "0:a",
+                "-c:v", "libx264", "-crf", "23", "-pix_fmt", "yuv420p",
+                "-preset", "ultrafast", "-r", str(settings.OUTPUT_FPS),
+                "-c:a", "copy", "-shortest",
+                output_path,
+            ]
+            _run_ffmpeg_cmd(cmd, "logo_watermark", timeout=180, deadline=deadline)
+            _verify_product(output_path, "logo_watermark")
+            logger.warning("[Compositor] ✅ 已叠加 Logo 水印: %s", output_path)
+            return output_path
+
+        # head / tail / head_tail: 生成 logo 片段并 concat
+        logo_duration = min(max(project.logo_duration, 0.5), 5.0)
+        target_w, target_h = width, height
+        logo_dir = Path(output_path).parent / "temp"
+        logo_dir.mkdir(parents=True, exist_ok=True)
+        head_clip = str(logo_dir / "logo_head.mp4") if pos in ("head", "head_tail") else None
+        tail_clip = str(logo_dir / "logo_tail.mp4") if pos in ("tail", "head_tail") else None
+
+        if head_clip:
+            _build_logo_clip(
+                logo_path, head_clip, target_w, target_h, logo_duration,
+                project.logo_animation, ffmpeg_exe, deadline=deadline,
+            )
+        if tail_clip:
+            _build_logo_clip(
+                logo_path, tail_clip, target_w, target_h, logo_duration,
+                project.logo_animation, ffmpeg_exe, deadline=deadline,
+            )
+
+        # concat demuxer: 写 list, 先 -c copy 极速拼接
+        list_path = logo_dir / "logo_concat_list.txt"
+        clips = [p for p in [head_clip, main_video_path, tail_clip] if p]
+        with open(list_path, "w", encoding="utf-8") as f:
+            for p in clips:
+                ap = os.path.abspath(p).replace("\\", "/").replace("'", "'\\''")
+                f.write(f"file '{ap}'\n")
+
+        copy_cmd = [
+            ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
+            "-i", str(list_path), "-c", "copy", output_path,
+        ]
+        try:
+            _run_ffmpeg_cmd(copy_cmd, "logo_concat_copy", timeout=120, deadline=deadline)
+            _verify_product(output_path, "logo_concat_copy")
+            logger.warning(
+                "[Compositor] ✅ 已拼接 Logo 片头/片尾(档位=copy): %s", output_path
+            )
+            return output_path
+        except Exception as copy_exc:  # noqa: BLE001
+            logger.warning("[Compositor] Logo concat -c copy 失败,降级重编码: %s", copy_exc)
+
+        # 降级重编码 concat(三段均带音频,统一 concat)
+        n_clips = len(clips)
+        inputs = [ffmpeg.input(p) for p in clips]
+        vstreams = [ip.video for ip in inputs]
+        astreams = [ip.audio for ip in inputs]
+        vcat = ffmpeg.concat(
+            *sum(zip(vstreams, astreams), ()), v=n_clips, a=n_clips
+        )
+        out = ffmpeg.output(
+            vcat, output_path,
+            vcodec="libx264", crf=23, pix_fmt="yuv420p",
+            preset="ultrafast", r=settings.OUTPUT_FPS,
+            acodec="aac", ab="192k",
+            **{"movflags": "+faststart"},
+        )
+        re_cmd = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
+        _run_ffmpeg_cmd(re_cmd, "logo_concat_reencode", timeout=180, deadline=deadline)
+        _verify_product(output_path, "logo_concat_reencode")
+        logger.warning(
+            "[Compositor] ✅ 已拼接 Logo 片头/片尾(档位=reencode): %s", output_path
+        )
+        return output_path
+
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[Compositor] Logo 处理失败,已回退到无 Logo 成片: %s", exc)
+        return main_video_path
+
+
+# ---------------------------------------------------------------------------
+# 最终合成
+# ---------------------------------------------------------------------------
 
 def _compose_ultra_minimal(
     input_paths: List[str],
@@ -1508,7 +1741,11 @@ def _compose_final_sync(
             logger.warning(
                 "[Compositor] ✅ 合成成功(档位=%s): %s", lvl_name, output_path
             )
-            return output_path
+            # V20.0: 附加 Logo 片头/片尾/水印(失败不影响成片,回退到无 Logo)
+            final_path = _attach_logo(
+                project, output_path, output_path, ffmpeg_exe, deadline=deadline
+            )
+            return final_path
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             logger.error(
@@ -1529,7 +1766,11 @@ def _compose_final_sync(
         logger.warning(
             "[Compositor] ✅ 极简保底合成成功(档位=L4_极简拼接): %s", output_path
         )
-        return output_path
+        # V20.0: 即使极简保底也尝试附加 Logo
+        final_path = _attach_logo(
+            project, output_path, output_path, ffmpeg_exe, deadline=deadline
+        )
+        return final_path
     except Exception as l4_exc:  # noqa: BLE001
         logger.error("[Compositor] ❌ 极简保底合成也失败: %s", l4_exc)
 

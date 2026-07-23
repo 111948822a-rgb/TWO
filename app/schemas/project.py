@@ -312,6 +312,23 @@ class VideoProject(BaseModel):
     auto_retry_count: int = Field(
         0, ge=0, description="被实例重启打断后的自动续跑次数(达上限则标记失败)"
     )
+    # V20.0: Logo 品牌动画配置 —— 在成片前后或全程叠加 Logo 动画,
+    #   默认启用片头+片尾淡入淡出动画,增强品牌露出。
+    logo_enabled: bool = Field(
+        True, description="是否在视频中加入 Logo 动画/水印"
+    )
+    logo_position: str = Field(
+        "head_tail", description="Logo 位置: none/head/tail/head_tail/watermark"
+    )
+    logo_duration: float = Field(
+        2.0, ge=0.5, le=5.0, description="片头/片尾 Logo 动画时长(秒)"
+    )
+    logo_animation: str = Field(
+        "fade", description="Logo 动画效果: fade/zoom/slide/none"
+    )
+    logo_local_path: Optional[str] = Field(
+        None, description="用户自定义 Logo 图片本地路径(为空则使用默认 Logo)"
+    )
 
     def touch(self) -> None:
         """更新 updated_at 时间戳,在任何状态变更后调用。"""
