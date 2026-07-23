@@ -387,6 +387,14 @@ class HappyHorseVideoProvider(IVideoProvider):
                 http_status, resp_text[:1000],
             )
             if http_status < 200 or http_status >= 300:
+                # 阿里云 DashScope 欠费/额度停用: 明确提示,避免误判为代码 bug
+                if "Arrearage" in resp_text or "overdue" in resp_text.lower():
+                    raise RuntimeError(
+                        "阿里云 DashScope 视频生成额度已欠费/被停用(HTTP 400 Arrearage)。"
+                        "视频生成 API 当前不可用,请到阿里云控制台结清账单或充值后重试;"
+                        "图片生成(通义万相)不受影响,可正常出图。原始响应: "
+                        + resp_text[:300]
+                    )
                 raise RuntimeError(
                     f"HappyHorse 提交任务失败 (HTTP {http_status}): {resp_text[:800]}"
                 )

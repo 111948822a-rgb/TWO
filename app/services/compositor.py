@@ -1470,6 +1470,16 @@ def _compose_final_sync(
         ),
     ]
 
+    # ☁️ 云端(Render 免费实例 0.1 CPU / 512MB): 跳过过重的 L1 档位,从 L2 起步。
+    # L1 的 Hook 花字(boxblur)+字幕烧录+音频 ducking 滤镜图极重,在免费实例上
+    # 编码极慢、且复杂滤镜初期长时间不打印 time= 进度 -> 表现为"卡在合成不报错"。
+    # 跳过 L1 后仍保留 xfade 转场 + BGM/旁白,L2/L3/L4 降级链完好,保证必出 MP4。
+    if os.getenv("RENDER_EXTERNAL_URL"):
+        levels = [lv for lv in levels if lv[0] != "L1_完美合成"]
+        logger.info(
+            "[Compositor] ☁️ 云端模式: 跳过 L1 重滤镜档位,从 L2 起步(防免费实例合成过慢/卡死)"
+        )
+
     last_exc: Exception | None = None
     for lvl_name, opts in levels:
         try:
