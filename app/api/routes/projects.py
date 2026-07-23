@@ -548,6 +548,11 @@ async def create_project(
     rhythm_rules: str = Form(""),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
+    # V20.1: Logo 品牌动画配置(前端创作工作台透传;缺省走模型默认)
+    logo_enabled: bool = Form(True),
+    logo_position: str = Form("head_tail"),
+    logo_duration: float = Form(2.0),
+    logo_animation: str = Form("fade"),
     current_user: dict = Depends(get_current_user),
 ):
     """创建视频生成任务,异步触发 5 阶段流水线,返回 task_id。
@@ -555,6 +560,8 @@ async def create_project(
     V17.0: 标记 creator_name(当前登录用户的显示名), 便于全员共享历史下追溯创建者。
     V18.0 Pacing Engine: 接收 total_duration + rhythm_rules(节奏时间轴 JSON),
         作为最高优先级硬约束贯穿 LLM 脚本生成与 FFmpeg 精准卡点。
+    V20.1: 接收 logo_enabled/logo_position/logo_duration/logo_animation,
+        透传到 VideoProject.logo_* 字段,供合成阶段附加品牌动画。
     """
     task_id = uuid.uuid4().hex[:12]
 
@@ -608,6 +615,11 @@ async def create_project(
             "rhythm_rules": parsed_rhythm,
         },
     )
+    # V20.1: 透传 Logo 品牌动画配置
+    project.logo_enabled = logo_enabled
+    project.logo_position = logo_position
+    project.logo_duration = logo_duration
+    project.logo_animation = logo_animation
     sync_project_from_model(project, creator_name=current_user["display_name"])
     _spawn_task(task_id, _run_safe(project))
 
@@ -647,6 +659,11 @@ async def create_batch(
     rhythm_rules: str = Form(""),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
+    # V20.1: Logo 品牌动画配置
+    logo_enabled: bool = Form(True),
+    logo_position: str = Form("head_tail"),
+    logo_duration: float = Form(2.0),
+    logo_animation: str = Form("fade"),
     current_user: dict = Depends(get_current_user),
 ):
     """批量生成:语言×氛围×脚本数 笛卡尔积,一键创建多个任务。
@@ -773,6 +790,11 @@ async def create_batch(
                             "rhythm_rules": parsed_rhythm,
                         },
                     )
+                    # V20.1: 透传 Logo 品牌动画配置(整批共享同一配置)
+                    project.logo_enabled = logo_enabled
+                    project.logo_position = logo_position
+                    project.logo_duration = logo_duration
+                    project.logo_animation = logo_animation
                     batch_projects.append(project)
                     sync_project_from_model(project, creator_name=current_user["display_name"])
                     combos.append({
@@ -1026,6 +1048,11 @@ async def generate_script(
     rhythm_rules: str = Form(""),
     image_url: Optional[str] = Form(None),
     image_file: List[UploadFile] = File([]),
+    # V20.1: Logo 品牌动画配置
+    logo_enabled: bool = Form(True),
+    logo_position: str = Form("head_tail"),
+    logo_duration: float = Form(2.0),
+    logo_animation: str = Form("fade"),
     current_user: dict = Depends(get_current_user),
 ):
     """V7.0 导演模式阶段①:只生成文案与分镜,返回 task_id + 完整 scenes JSON。
@@ -1088,6 +1115,11 @@ async def generate_script(
         },
         config={"candidates_per_scene": max(1, min(3, candidates_per_scene))},
     )
+    # V20.1: 透传 Logo 品牌动画配置
+    project.logo_enabled = logo_enabled
+    project.logo_position = logo_position
+    project.logo_duration = logo_duration
+    project.logo_animation = logo_animation
     sync_project_from_model(project, creator_name=current_user["display_name"])
 
     logger.info(
@@ -1142,6 +1174,11 @@ async def clone_video(
     product_material: str = Form("other"),
     reference_video: UploadFile = File(...),
     image_file: List[UploadFile] = File([]),
+    # V20.1: Logo 品牌动画配置
+    logo_enabled: bool = Form(True),
+    logo_position: str = Form("head_tail"),
+    logo_duration: float = Form(2.0),
+    logo_animation: str = Form("fade"),
     current_user: dict = Depends(get_current_user),
 ):
     """V15.0 拍同款:上传参考视频 + 产品图,自动分析视频分镜并复刻。
@@ -1234,6 +1271,11 @@ async def clone_video(
             "clone_mode": True,
         },
     )
+    # V20.1: 透传 Logo 品牌动画配置
+    project.logo_enabled = logo_enabled
+    project.logo_position = logo_position
+    project.logo_duration = logo_duration
+    project.logo_animation = logo_animation
     sync_project_from_model(project, creator_name=current_user["display_name"])
     _spawn_task(task_id, _run_safe(project))
 

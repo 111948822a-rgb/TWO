@@ -241,6 +241,14 @@
       background: var(--accent-gradient); color: #fff; border-color: transparent;
     }
 
+    /* V20.1: 语言切换按钮激活态 */
+    #langZh.active, #langEn.active {
+      background: var(--accent-gradient) !important;
+      color: #fff !important; font-weight: 700;
+    }
+    /* Logo 配置滑块轨道着色 */
+    #logoDuration { accent-color: var(--accent-color); }
+
     /* Progress bar */
     .progress-bar {
       height: 6px; border-radius: 3px; background: var(--bg-hover); overflow: hidden;
@@ -874,6 +882,37 @@
             <div id="materialPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
           </div>
 
+          <!-- V20.1 Logo 品牌动画设置 -->
+          <div id="logoConfigCard" style="margin-bottom:14px;padding:16px;border-radius:14px;border:1px solid var(--border-color);background:var(--bg-tertiary);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text-primary);margin:0;cursor:pointer;">
+                <span style="font-size:16px;">🏷️</span>
+                <span data-i18n="logo_title">Logo 品牌动画</span>
+              </label>
+              <input type="checkbox" id="logoEnabled" class="ios-toggle" checked />
+            </div>
+            <div id="logoOptions" style="display:flex;flex-direction:column;gap:12px;">
+              <!-- 位置 -->
+              <div>
+                <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="logo_position_label">Logo 位置</label>
+                <div id="logoPosPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+              </div>
+              <!-- 动画 -->
+              <div>
+                <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="logo_animation_label">动画效果</label>
+                <div id="logoAnimPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+              </div>
+              <!-- 时长 -->
+              <div>
+                <label style="display:flex;justify-content:space-between;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;">
+                  <span data-i18n="logo_duration_label">动画时长</span>
+                  <span id="logoDurVal" style="color:var(--accent-color);font-weight:700;">2.0s</span>
+                </label>
+                <input id="logoDuration" type="range" min="0.5" max="5" step="0.5" value="2" style="width:100%;" />
+              </div>
+            </div>
+          </div>
+
           <!-- Director Mode + Voiceover -->
           <div style="display:flex;gap:12px;margin-bottom:14px;">
             <div style="flex:1;display:flex;align-items:center;justify-content:space-between;background:var(--bg-tertiary);border-radius:10px;padding:10px 14px;border:1px solid var(--border-color);">
@@ -1291,6 +1330,7 @@ function autoDownloadVideo(taskId) {
 // ======================================================================
 const I18nModule = {
   lang: 'zh',
+  storeKey: 'v8_lang',
   dict: {
     zh: {
       nav_studio: "创作工作台", nav_queue: "生成进度", nav_history: "历史档案馆", nav_products: "产品库",
@@ -1375,6 +1415,9 @@ const I18nModule = {
       clone_no_name: "请填写产品名称",
       clone_success: "拍同款任务已创建！正在分析视频...",
       clone_failed: "创建失败",
+      logo_title: "Logo 品牌动画", logo_position_label: "Logo 位置", logo_animation_label: "动画效果", logo_duration_label: "动画时长",
+      logo_pos_none: "不添加", logo_pos_head: "仅片头", logo_pos_tail: "仅片尾", logo_pos_head_tail: "片头+片尾", logo_pos_watermark: "全程水印",
+      logo_anim_fade: "淡入淡出", logo_anim_zoom: "缩放", logo_anim_slide: "滑入", logo_anim_none: "无动画",
     },
     en: {
       nav_studio: "Studio", nav_queue: "Queue", nav_history: "History", nav_products: "Products",
@@ -1459,11 +1502,34 @@ const I18nModule = {
       clone_no_name: "Please enter product name",
       clone_success: "Clone task created! Analyzing video...",
       clone_failed: "Creation failed",
+      logo_title: "Logo Branding", logo_position_label: "Logo Position", logo_animation_label: "Animation", logo_duration_label: "Duration",
+      logo_pos_none: "None", logo_pos_head: "Head Only", logo_pos_tail: "Tail Only", logo_pos_head_tail: "Head + Tail", logo_pos_watermark: "Watermark",
+      logo_anim_fade: "Fade", logo_anim_zoom: "Zoom", logo_anim_slide: "Slide", logo_anim_none: "None",
     }
   },
   t(key) {
     const d = this.dict[this.lang];
     return d[key] || this.dict.zh[key] || key;
+  },
+  // V20.1: 启动时从 localStorage 恢复语言选择
+  init() {
+    try {
+      const saved = localStorage.getItem(this.storeKey);
+      if (saved === 'zh' || saved === 'en') this.lang = saved;
+    } catch (e) { /* ignore */ }
+  },
+  // V20.1: 切换语言并持久化
+  setLang(lang) {
+    if (lang !== 'zh' && lang !== 'en') return;
+    this.lang = lang;
+    try { localStorage.setItem(this.storeKey, lang); } catch (e) { /* ignore */ }
+    this.apply();
+  },
+  _highlight() {
+    const zh = document.getElementById('langZh');
+    const en = document.getElementById('langEn');
+    if (zh) zh.classList.toggle('active', this.lang === 'zh');
+    if (en) en.classList.toggle('active', this.lang === 'en');
   },
   apply() {
     document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -1474,6 +1540,7 @@ const I18nModule = {
     document.querySelectorAll('[data-i18n-ph]').forEach(el => {
       el.placeholder = this.t(el.getAttribute('data-i18n-ph'));
     });
+    this._highlight();
   }
 };
 
@@ -1551,6 +1618,12 @@ const GenerateModule = {
   directorMode: false,
   directorTaskId: null,
 
+  // V20.1: Logo 品牌动画配置(默认开启片头+片尾淡入淡出)
+  logoEnabled: true,
+  selectedLogoPosition: 'head_tail',
+  selectedLogoAnimation: 'fade',
+  selectedLogoDuration: 2.0,
+
   // ===== V18.0 Pacing Engine 爆款节奏把控 =====
   selectedDuration: 15,
   // 每个阶段的视觉样式(emoji + 渐变色),用于时间轴可视化
@@ -1599,6 +1672,7 @@ const GenerateModule = {
     this.renderCandidatesPills();
     this.renderDurationPills();      // V18.0 Pacing Engine
     this.renderRhythmTimeline();     // V18.0 Pacing Engine
+    this.renderLogoPills();          // V20.1 Logo 品牌动画
     this.bindEvents();
     this.updateSpecPreview();
     this.loadCloneList();
@@ -1682,6 +1756,41 @@ const GenerateModule = {
       };
       container.appendChild(pill);
     });
+  },
+
+  // V20.1: Logo 品牌动画选择(位置 + 动画效果)
+  renderLogoPills() {
+    const posMap = {
+      none: this.t('logo_pos_none'), head: this.t('logo_pos_head'),
+      tail: this.t('logo_pos_tail'), head_tail: this.t('logo_pos_head_tail'),
+      watermark: this.t('logo_pos_watermark'),
+    };
+    const animMap = {
+      fade: this.t('logo_anim_fade'), zoom: this.t('logo_anim_zoom'),
+      slide: this.t('logo_anim_slide'), none: this.t('logo_anim_none'),
+    };
+    const posContainer = document.getElementById('logoPosPills');
+    const animContainer = document.getElementById('logoAnimPills');
+    if (posContainer) {
+      posContainer.innerHTML = '';
+      Object.keys(posMap).forEach(pos => {
+        const pill = document.createElement('div');
+        pill.className = 'pill' + (this.selectedLogoPosition === pos ? ' active' : '');
+        pill.innerText = posMap[pos];
+        pill.onclick = () => { this.selectedLogoPosition = pos; this.renderLogoPills(); };
+        posContainer.appendChild(pill);
+      });
+    }
+    if (animContainer) {
+      animContainer.innerHTML = '';
+      Object.keys(animMap).forEach(anim => {
+        const pill = document.createElement('div');
+        pill.className = 'pill' + (this.selectedLogoAnimation === anim ? ' active' : '');
+        pill.innerText = animMap[anim];
+        pill.onclick = () => { this.selectedLogoAnimation = anim; this.renderLogoPills(); };
+        animContainer.appendChild(pill);
+      });
+    }
   },
 
   renderAspectRatioPills() {
@@ -1972,6 +2081,24 @@ const GenerateModule = {
       this.handleFiles(e.dataTransfer.files);
     });
 
+    // V20.1: Logo 启用开关 + 时长滑块
+    const logoEnabled = document.getElementById('logoEnabled');
+    const logoOptions = document.getElementById('logoOptions');
+    const logoDuration = document.getElementById('logoDuration');
+    const logoDurVal = document.getElementById('logoDurVal');
+    if (logoEnabled) {
+      logoEnabled.addEventListener('change', (e) => {
+        this.logoEnabled = e.target.checked;
+        if (logoOptions) logoOptions.style.display = e.target.checked ? 'flex' : 'none';
+      });
+    }
+    if (logoDuration) {
+      logoDuration.addEventListener('input', (e) => {
+        this.selectedLogoDuration = parseFloat(e.target.value);
+        if (logoDurVal) logoDurVal.innerText = this.selectedLogoDuration.toFixed(1) + 's';
+      });
+    }
+
     // Submit
     document.getElementById('submitBtn').addEventListener('click', () => this.onSubmit());
 
@@ -2004,9 +2131,9 @@ const GenerateModule = {
       item.addEventListener('click', () => switchView(item.dataset.view));
     });
 
-    // Language switch
-    document.getElementById('langZh').addEventListener('click', () => { I18nModule.lang = 'zh'; I18nModule.apply(); this.refreshPills(); });
-    document.getElementById('langEn').addEventListener('click', () => { I18nModule.lang = 'en'; I18nModule.apply(); this.refreshPills(); });
+    // Language switch (V20.1: 持久化到 localStorage + 高亮)
+    document.getElementById('langZh').addEventListener('click', () => { I18nModule.setLang('zh'); this.refreshPills(); });
+    document.getElementById('langEn').addEventListener('click', () => { I18nModule.setLang('en'); this.refreshPills(); });
 
     // Confirm modal
     document.getElementById('confirmCancel').addEventListener('click', () => {
@@ -2019,6 +2146,12 @@ const GenerateModule = {
     this.renderVibePills();
     this.renderVsPills();
     this.renderDefringePills();
+    this.renderMaterialPills();
+    this.renderAspectRatioPills();
+    this.renderCandidatesPills();
+    this.renderDurationPills();
+    this.renderLogoPills();   // V20.1: 翻译 Logo 位置/动画文案
+    this.updateSpecPreview();
   },
 
   handleFiles(files) {
@@ -2109,6 +2242,12 @@ const GenerateModule = {
     formData.append('total_duration', String(this.selectedDuration));
     formData.append('rhythm_rules', JSON.stringify(this.getRhythmRules()));
 
+    // V20.1: Logo 品牌动画配置
+    formData.append('logo_enabled', this.logoEnabled ? 'true' : 'false');
+    formData.append('logo_position', this.logoEnabled ? this.selectedLogoPosition : 'none');
+    formData.append('logo_duration', String(this.selectedLogoDuration));
+    formData.append('logo_animation', this.selectedLogoAnimation);
+
     const imageUrl = document.getElementById('imageUrl').value.trim();
     if (this.uploadedFiles.length === 0 && !imageUrl) { alert(this.t('err_no_image')); return; }
     if (imageUrl) formData.append('image_url', imageUrl);
@@ -2154,6 +2293,12 @@ const GenerateModule = {
     // V18.0 Pacing Engine：总时长 + 节奏时间轴(JSON 字符串)
     formData.append('total_duration', String(this.selectedDuration));
     formData.append('rhythm_rules', JSON.stringify(this.getRhythmRules()));
+
+    // V20.1: Logo 品牌动画配置
+    formData.append('logo_enabled', this.logoEnabled ? 'true' : 'false');
+    formData.append('logo_position', this.logoEnabled ? this.selectedLogoPosition : 'none');
+    formData.append('logo_duration', String(this.selectedLogoDuration));
+    formData.append('logo_animation', this.selectedLogoAnimation);
 
     const imageUrl = document.getElementById('imageUrl').value.trim();
     if (this.uploadedFiles.length === 0 && !imageUrl) { alert(this.t('err_no_image')); return; }
@@ -3933,6 +4078,7 @@ const DashboardModule = {
 // ======================================================================
 document.addEventListener('DOMContentLoaded', () => {
   ThemeModule.init();
+  I18nModule.init();      // V20.1: 恢复上次语言选择
   I18nModule.apply();
   // V17.0: 全局路由守卫 —— 先校验登录态, 成功后才初始化应用
   AuthModule.init();
