@@ -539,7 +539,7 @@
     <nav class="sidebar-nav">
       <button class="nav-item active" data-view="dashboard">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-        <span>🏠 首页 (Dashboard)</span>
+        <span data-i18n="nav_home">🏠 首页 (Dashboard)</span>
       </button>
       <button class="nav-item" data-view="studio">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
@@ -600,8 +600,8 @@
     <div id="view-dashboard" class="view active" style="padding:32px;max-width:1280px;margin:0 auto;">
       <!-- Header -->
       <div style="margin-bottom:28px;">
-        <h1 style="font-size:28px;font-weight:700;color:var(--text-primary);margin:0;letter-spacing:-0.5px;">首页 Dashboard</h1>
-        <p style="font-size:14px;color:var(--text-secondary);margin:8px 0 0;">欢迎回来，这里是你的带货视频作战中心 👋 一键掌握全局产出与火力。</p>
+        <h1 style="font-size:28px;font-weight:700;color:var(--text-primary);margin:0;letter-spacing:-0.5px;" data-i18n="dash_title">首页 Dashboard</h1>
+        <p style="font-size:14px;color:var(--text-secondary);margin:8px 0 0;" data-i18n="dash_welcome">欢迎回来，这里是你的带货视频作战中心 👋 一键掌握全局产出与火力。</p>
       </div>
 
       <!-- 1. 核心数据看板 -->
@@ -609,55 +609,55 @@
         <div class="dash-card" style="padding:24px;border-radius:16px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <span style="font-size:22px;">📦</span>
-            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);">产品储备</span>
+            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);" data-i18n="dash_products_label">产品储备</span>
           </div>
           <div id="stat-total-products" style="font-size:38px;font-weight:800;line-height:1;color:var(--text-primary);">--</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">已录入产品素材</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;" data-i18n="dash_products_desc">已录入产品素材</div>
         </div>
         <div class="dash-card" style="padding:24px;border-radius:16px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <span style="font-size:22px;">🎬</span>
-            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);">累计产出</span>
+            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);" data-i18n="dash_output_label">累计产出</span>
           </div>
           <div id="stat-total-videos" style="font-size:38px;font-weight:800;line-height:1;color:var(--text-primary);">--</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">成功视频总数</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;" data-i18n="dash_output_desc">成功视频总数</div>
         </div>
         <div class="dash-card" style="padding:24px;border-radius:16px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <span style="font-size:22px;">🔥</span>
-            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);">今日火力</span>
+            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);" data-i18n="dash_today_label">今日火力</span>
           </div>
           <div id="stat-today-videos" style="font-size:38px;font-weight:800;line-height:1;color:var(--text-primary);">--</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">今日新增视频</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;" data-i18n="dash_today_desc">今日新增视频</div>
         </div>
         <div class="dash-card" style="padding:24px;border-radius:16px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
             <span style="font-size:22px;">⚙️</span>
-            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);">正在渲染</span>
+            <span style="font-size:11px;letter-spacing:0.5px;text-transform:uppercase;color:var(--text-muted);" data-i18n="dash_rendering_label">正在渲染</span>
           </div>
           <div id="stat-running-tasks" style="font-size:38px;font-weight:800;line-height:1;color:var(--text-primary);">--</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">进行中的任务</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:8px;" data-i18n="dash_rendering_desc">进行中的任务</div>
         </div>
       </div>
 
       <!-- 2. 快捷行动区 -->
       <div style="margin-bottom:32px;">
-        <h2 style="font-size:16px;font-weight:700;color:var(--text-primary);margin:0 0 16px;">快捷行动</h2>
+        <h2 style="font-size:16px;font-weight:700;color:var(--text-primary);margin:0 0 16px;" data-i18n="dash_quick_actions">快捷行动</h2>
         <div class="grid grid-cols-3 gap-6">
           <div class="quick-action" onclick="switchView('studio')" style="padding:24px;border-radius:16px;">
             <div style="font-size:34px;margin-bottom:12px;">🎬</div>
-            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">新建爆款</div>
-            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">从产品库或空白开始，AI 帮你生成带货脚本与分镜。</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;" data-i18n="qa_new_hit_title">新建爆款</div>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;" data-i18n="qa_new_hit_desc">从产品库或空白开始，AI 帮你生成带货脚本与分镜。</div>
           </div>
           <div class="quick-action" onclick="switchView('agent')" style="padding:24px;border-radius:16px;">
             <div style="font-size:34px;margin-bottom:12px;">🤖</div>
-            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">AI 导演</div>
-            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">用对话方式描述需求，导演模式自动拆解候选。</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;" data-i18n="qa_director_title">AI 导演</div>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;" data-i18n="qa_director_desc">用对话方式描述需求，导演模式自动拆解候选。</div>
           </div>
           <div class="quick-action" onclick="switchView('clone')" style="padding:24px;border-radius:16px;">
             <div style="font-size:34px;margin-bottom:12px;">📹</div>
-            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">拍同款</div>
-            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;">上传一条爆款视频，1:1 复刻它的分镜结构。</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);margin-bottom:6px;" data-i18n="qa_clone_title">拍同款</div>
+            <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;" data-i18n="qa_clone_desc">上传一条爆款视频，1:1 复刻它的分镜结构。</div>
           </div>
         </div>
       </div>
@@ -665,8 +665,8 @@
       <!-- 3. 最新产出橱窗 -->
       <div style="margin-bottom:32px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <h2 style="font-size:16px;font-weight:700;color:var(--text-primary);margin:0;">最新产出橱窗</h2>
-          <button class="btn-secondary" style="font-size:12px;" onclick="switchView('history')">查看全部 →</button>
+          <h2 style="font-size:16px;font-weight:700;color:var(--text-primary);margin:0;" data-i18n="dash_showcase">最新产出橱窗</h2>
+          <button class="btn-secondary" style="font-size:12px;" onclick="switchView('history')" data-i18n="dash_view_all">查看全部 →</button>
         </div>
         <div id="dashRecent" class="grid grid-cols-4 gap-6"></div>
       </div>
@@ -721,11 +721,11 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;">
           <div>
             <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="product_name">产品名称</label>
-            <input id="cloneProductName" type="text" class="input-base" placeholder="如：便携保温杯" style="width:100%;">
+            <input id="cloneProductName" type="text" class="input-base" placeholder="如：便携保温杯" style="width:100%;" data-i18n-ph="ph_clone_name">
           </div>
           <div>
             <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="selling_points">核心卖点</label>
-            <input id="cloneSellingPoints" type="text" class="input-base" placeholder="如：24h保温,316不锈钢" style="width:100%;">
+            <input id="cloneSellingPoints" type="text" class="input-base" placeholder="如：24h保温,316不锈钢" style="width:100%;" data-i18n-ph="ph_clone_points">
           </div>
           <div>
             <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;" data-i18n="language">语言</label>
@@ -771,6 +771,34 @@
           <input type="checkbox" id="cloneVoiceover" checked style="accent-color:var(--accent-color);">
           <label for="cloneVoiceover" style="font-size:13px;color:var(--text-secondary);cursor:pointer;" data-i18n="enable_voiceover">生成 AI 配音</label>
         </div>
+
+        <!-- V20.1 Logo 品牌动画设置(克隆页) -->
+        <div id="cloneLogoConfigCard" style="margin-top:14px;padding:16px;border-radius:14px;border:1px solid var(--border-color);background:var(--bg-tertiary);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text-primary);margin:0;cursor:pointer;">
+              <span style="font-size:16px;">🏷️</span>
+              <span data-i18n="logo_title">Logo 品牌动画</span>
+            </label>
+            <input type="checkbox" id="cloneLogoEnabled" class="ios-toggle" checked />
+          </div>
+          <div id="cloneLogoOptions" style="display:flex;flex-direction:column;gap:12px;">
+            <div>
+              <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="logo_position_label">Logo 位置</label>
+              <div id="cloneLogoPosPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+            </div>
+            <div>
+              <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="logo_animation_label">动画效果</label>
+              <div id="cloneLogoAnimPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+            </div>
+            <div>
+              <label style="display:flex;justify-content:space-between;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;">
+                <span data-i18n="logo_duration_label">动画时长</span>
+                <span id="cloneLogoDurVal" style="color:var(--accent-color);font-weight:700;">2.0s</span>
+              </label>
+              <input id="cloneLogoDuration" type="range" min="0.5" max="5" step="0.5" value="2" style="width:100%;" />
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 提交按钮 -->
@@ -799,19 +827,19 @@
           <!-- Product Name -->
           <div style="margin-bottom:14px;">
             <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="product_name">产品名称</label>
-            <input id="productName" type="text" class="input-base" placeholder="请输入产品名称" />
+            <input id="productName" type="text" class="input-base" placeholder="请输入产品名称" data-i18n-ph="ph_studio_name" />
           </div>
 
           <!-- Selling Points -->
           <div style="margin-bottom:14px;">
             <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="selling_points">核心卖点</label>
-            <input id="sellingPoints" type="text" class="input-base" placeholder="请输入核心卖点，逗号分隔" />
+            <input id="sellingPoints" type="text" class="input-base" placeholder="请输入核心卖点，逗号分隔" data-i18n-ph="ph_studio_points" />
           </div>
 
           <!-- Target Audience -->
           <div style="margin-bottom:14px;">
             <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="target_audience">目标受众</label>
-            <input id="targetAudience" type="text" class="input-base" placeholder="请输入目标受众" />
+            <input id="targetAudience" type="text" class="input-base" placeholder="请输入目标受众" data-i18n-ph="ph_studio_audience" />
           </div>
 
           <!-- Aspect Ratio -->
@@ -827,9 +855,9 @@
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
               <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text-primary);margin:0;">
                 <span style="font-size:16px;">⏱️</span>
-                <span style="background:linear-gradient(90deg,#7850ff,#ff5a78);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">视频节奏与时长</span>
+                <span style="background:linear-gradient(90deg,#7850ff,#ff5a78);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;" data-i18n="pacing_title">视频节奏与时长</span>
               </label>
-              <span style="font-size:11px;color:var(--text-muted);padding:2px 8px;border-radius:10px;background:rgba(120,80,255,0.14);">黄金节奏模板 · 强约束卡点</span>
+              <span style="font-size:11px;color:var(--text-muted);padding:2px 8px;border-radius:10px;background:rgba(120,80,255,0.14);" data-i18n="pacing_badge">黄金节奏模板 · 强约束卡点</span>
             </div>
             <!-- 时长单选 15/30/60 -->
             <div id="durationPills" style="display:flex;gap:8px;margin-bottom:14px;"></div>
@@ -848,7 +876,7 @@
             </div>
             <div id="fileList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;"></div>
             <div style="margin-top:8px;">
-              <input id="imageUrl" type="text" class="input-base" placeholder="或输入图片 URL" style="font-size:12px;" />
+              <input id="imageUrl" type="text" class="input-base" placeholder="或输入图片 URL" style="font-size:12px;" data-i18n-ph="ph_image_url" />
             </div>
           </div>
 
@@ -1084,7 +1112,7 @@
       </div>
       <!-- Search -->
       <div style="margin-bottom:16px;">
-        <input id="productSearch" type="text" class="input-base" placeholder="搜索产品名称..." style="max-width:400px;" />
+        <input id="productSearch" type="text" class="input-base" placeholder="搜索产品名称..." style="max-width:400px;" data-i18n-ph="ph_search" />
       </div>
       <!-- Table -->
       <div class="card" style="overflow:hidden;">
@@ -1177,7 +1205,7 @@
   <div style="max-width:420px;width:90%;">
     <video id="videoPlayer" controls style="width:100%;border-radius:16px;background:#000;"></video>
     <div style="text-align:center;margin-top:12px;">
-      <button id="videoClose" class="btn-secondary">关闭</button>
+      <button id="videoClose" class="btn-secondary" data-i18n="video_close">关闭</button>
     </div>
   </div>
 </div>
@@ -1199,15 +1227,15 @@
     <h3 style="font-size:16px;font-weight:600;color:var(--text-primary);margin:0 0 20px;" data-i18n="add_product">新增产品</h3>
     <div style="margin-bottom:14px;">
       <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="product_name">产品名称</label>
-      <input id="newProductName" type="text" class="input-base" placeholder="请输入产品名称" />
+      <input id="newProductName" type="text" class="input-base" placeholder="请输入产品名称" data-i18n-ph="ph_new_name" />
     </div>
     <div style="margin-bottom:14px;">
       <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="selling_points">核心卖点</label>
-      <input id="newProductPoints" type="text" class="input-base" placeholder="卖点1,卖点2,卖点3" />
+      <input id="newProductPoints" type="text" class="input-base" placeholder="卖点1,卖点2,卖点3" data-i18n-ph="ph_new_points" />
     </div>
     <div style="margin-bottom:20px;">
       <label style="display:block;font-size:12px;color:var(--text-secondary);margin-bottom:6px;" data-i18n="ref_image">参考图URL</label>
-      <input id="newProductImages" type="text" class="input-base" placeholder="https://example.com/img.png (逗号分隔)" />
+      <input id="newProductImages" type="text" class="input-base" placeholder="https://example.com/img.png (逗号分隔)" data-i18n-ph="ph_new_images" />
     </div>
     <div style="display:flex;gap:12px;justify-content:flex-end;">
       <button id="productCancel" class="btn-secondary" data-i18n="cancel">取消</button>
@@ -1252,49 +1280,49 @@
       <div style="text-align:center;margin-bottom:22px;">
         <div class="sidebar-logo-icon" style="width:48px;height:48px;font-size:24px;margin:0 auto 12px;border-radius:14px;">🎬</div>
         <h1 style="font-size:21px;font-weight:700;color:var(--text-primary);margin:0;letter-spacing:-0.5px;">Commerce Video Studio</h1>
-        <p style="font-size:13px;color:var(--text-secondary);margin:6px 0 0;">内部协作平台 · 请登录或注册以继续使用</p>
+        <p style="font-size:13px;color:var(--text-secondary);margin:6px 0 0;" data-i18n="auth_platform_hint">内部协作平台 · 请登录或注册以继续使用</p>
       </div>
 
       <div class="auth-tabs">
-        <button id="authTabLogin" class="auth-tab active" onclick="AuthModule.switchTab('login')">登录</button>
-        <button id="authTabRegister" class="auth-tab" onclick="AuthModule.switchTab('register')">注册</button>
+        <button id="authTabLogin" class="auth-tab active" onclick="AuthModule.switchTab('login')" data-i18n="auth_login">登录</button>
+        <button id="authTabRegister" class="auth-tab" onclick="AuthModule.switchTab('register')" data-i18n="auth_register">注册</button>
       </div>
 
       <!-- 登录表单 -->
       <form id="loginForm" class="auth-form" onsubmit="return AuthModule.submitLogin(event)">
         <div>
-          <label class="input-label" for="loginUsername">用户名</label>
-          <input id="loginUsername" class="input-base" type="text" autocomplete="username" placeholder="请输入用户名" />
+          <label class="input-label" for="loginUsername" data-i18n="auth_user">用户名</label>
+          <input id="loginUsername" class="input-base" type="text" autocomplete="username" placeholder="请输入用户名" data-i18n-ph="ph_login_user" />
         </div>
         <div>
-          <label class="input-label" for="loginPassword">密码</label>
-          <input id="loginPassword" class="input-base" type="password" autocomplete="current-password" placeholder="请输入密码" />
+          <label class="input-label" for="loginPassword" data-i18n="auth_pass">密码</label>
+          <input id="loginPassword" class="input-base" type="password" autocomplete="current-password" placeholder="请输入密码" data-i18n-ph="ph_login_pass" />
         </div>
         <div id="loginError" class="auth-error"></div>
-        <button type="submit" class="btn-primary" style="width:100%;">登 录</button>
+        <button type="submit" class="btn-primary" style="width:100%;" data-i18n="auth_login_btn">登 录</button>
       </form>
 
       <!-- 注册表单 -->
       <form id="registerForm" class="auth-form" style="display:none;" onsubmit="return AuthModule.submitRegister(event)">
         <div>
-          <label class="input-label" for="regUsername">用户名</label>
-          <input id="regUsername" class="input-base" type="text" autocomplete="username" placeholder="3-32位, 字母/数字/_/-" />
+          <label class="input-label" for="regUsername" data-i18n="auth_user">用户名</label>
+          <input id="regUsername" class="input-base" type="text" autocomplete="username" placeholder="3-32位, 字母/数字/_/-" data-i18n-ph="ph_reg_user" />
         </div>
         <div>
-          <label class="input-label" for="regDisplayName">显示名称(昵称)</label>
-          <input id="regDisplayName" class="input-base" type="text" placeholder="团队内展示的名字, 如 小明" />
+          <label class="input-label" for="regDisplayName" data-i18n="auth_displayname">显示名称(昵称)</label>
+          <input id="regDisplayName" class="input-base" type="text" placeholder="团队内展示的名字, 如 小明" data-i18n-ph="ph_reg_display" />
         </div>
         <div>
-          <label class="input-label" for="regPassword">密码</label>
-          <input id="regPassword" class="input-base" type="password" autocomplete="new-password" placeholder="至少 6 位" />
+          <label class="input-label" for="regPassword" data-i18n="auth_pass">密码</label>
+          <input id="regPassword" class="input-base" type="password" autocomplete="new-password" placeholder="至少 6 位" data-i18n-ph="ph_reg_pass" />
         </div>
         <div>
-          <label class="input-label" for="regPassword2">确认密码</label>
-          <input id="regPassword2" class="input-base" type="password" autocomplete="new-password" placeholder="再次输入密码" />
+          <label class="input-label" for="regPassword2" data-i18n="auth_confirmpass">确认密码</label>
+          <input id="regPassword2" class="input-base" type="password" autocomplete="new-password" placeholder="再次输入密码" data-i18n-ph="ph_reg_pass2" />
         </div>
         <div id="registerError" class="auth-error"></div>
-        <button type="submit" class="btn-primary" style="width:100%;">注 册</button>
-        <p class="auth-hint">注册即表示该账号仅用于内部协作</p>
+        <button type="submit" class="btn-primary" style="width:100%;" data-i18n="auth_register_btn">注 册</button>
+        <p class="auth-hint" data-i18n="auth_hint">注册即表示该账号仅用于内部协作</p>
       </form>
     </div>
   </div>
@@ -1418,6 +1446,34 @@ const I18nModule = {
       logo_title: "Logo 品牌动画", logo_position_label: "Logo 位置", logo_animation_label: "动画效果", logo_duration_label: "动画时长",
       logo_pos_none: "不添加", logo_pos_head: "仅片头", logo_pos_tail: "仅片尾", logo_pos_head_tail: "片头+片尾", logo_pos_watermark: "全程水印",
       logo_anim_fade: "淡入淡出", logo_anim_zoom: "缩放", logo_anim_slide: "滑入", logo_anim_none: "无动画",
+      nav_home: "🏠 首页 (Dashboard)",
+      // V22.0: 占位符 / 首页 / 登录注册 / 节奏 / JS 串
+      ph_clone_name: "如：便携保温杯", ph_clone_points: "如：24h保温,316不锈钢",
+      ph_studio_name: "请输入产品名称", ph_studio_points: "请输入核心卖点，逗号分隔", ph_studio_audience: "请输入目标受众", ph_image_url: "或输入图片 URL",
+      ph_search: "搜索产品名称...",
+      ph_new_name: "请输入产品名称", ph_new_points: "卖点1,卖点2,卖点3", ph_new_images: "https://example.com/img.png (逗号分隔)",
+      ph_login_user: "请输入用户名", ph_login_pass: "请输入密码",
+      ph_reg_user: "3-32位, 字母/数字/_/-", ph_reg_display: "团队内展示的名字, 如 小明", ph_reg_pass: "至少 6 位", ph_reg_pass2: "再次输入密码",
+      dash_title: "首页 Dashboard", dash_welcome: "欢迎回来，这里是你的带货视频作战中心 👋 一键掌握全局产出与火力。",
+      dash_products_label: "产品储备", dash_products_desc: "已录入产品素材",
+      dash_output_label: "累计产出", dash_output_desc: "成功视频总数",
+      dash_today_label: "今日火力", dash_today_desc: "今日新增视频",
+      dash_rendering_label: "正在渲染", dash_rendering_desc: "进行中的任务",
+      dash_quick_actions: "快捷行动",
+      qa_new_hit_title: "新建爆款", qa_new_hit_desc: "从产品库或空白开始，AI 帮你生成带货脚本与分镜。",
+      qa_director_title: "AI 导演", qa_director_desc: "用对话方式描述需求，导演模式自动拆解候选。",
+      qa_clone_title: "拍同款", qa_clone_desc: "上传一条爆款视频，1:1 复刻它的分镜结构。",
+      dash_showcase: "最新产出橱窗", dash_view_all: "查看全部 →",
+      pacing_title: "视频节奏与时长", pacing_badge: "黄金节奏模板 · 强约束卡点",
+      auth_platform_hint: "内部协作平台 · 请登录或注册以继续使用",
+      auth_login: "登录", auth_register: "注册", auth_login_btn: "登 录", auth_register_btn: "注 册",
+      auth_hint: "注册即表示该账号仅用于内部协作",
+      auth_user: "用户名", auth_pass: "密码", auth_displayname: "显示名称(昵称)", auth_confirmpass: "确认密码",
+      video_close: "关闭", btn_exit: "退出", btn_close_sw: "🔌 关闭软件",
+      q_elapsed: "⏱️ 已耗时: ", q_eta: "⏳ 预计剩余: ", loading: "加载中...", no_match: "无匹配结果", wait_candidates: "⏸️ 等待选择候选素材",
+      log_loading: "加载中…", log_failed: "日志加载失败", log_empty: "暂无执行日志",
+      view_log: "📋 查看执行日志",
+      empty_showcase: "还没有成功产出的视频，去工作台生成第一个爆款吧 🚀", load_failed: "加载失败，请刷新重试",
     },
     en: {
       nav_studio: "Studio", nav_queue: "Queue", nav_history: "History", nav_products: "Products",
@@ -1505,6 +1561,34 @@ const I18nModule = {
       logo_title: "Logo Branding", logo_position_label: "Logo Position", logo_animation_label: "Animation", logo_duration_label: "Duration",
       logo_pos_none: "None", logo_pos_head: "Head Only", logo_pos_tail: "Tail Only", logo_pos_head_tail: "Head + Tail", logo_pos_watermark: "Watermark",
       logo_anim_fade: "Fade", logo_anim_zoom: "Zoom", logo_anim_slide: "Slide", logo_anim_none: "None",
+      nav_home: "🏠 Home (Dashboard)",
+      // V22.0: placeholders / dashboard / auth / pacing / JS strings
+      ph_clone_name: "e.g. Portable Thermos", ph_clone_points: "e.g. 24h warm-keep, 316 steel",
+      ph_studio_name: "Enter product name", ph_studio_points: "Selling points, comma-separated", ph_studio_audience: "Target audience", ph_image_url: "Or paste image URL",
+      ph_search: "Search product name...",
+      ph_new_name: "Enter product name", ph_new_points: "Point1, Point2, Point3", ph_new_images: "https://example.com/img.png (comma-separated)",
+      ph_login_user: "Enter username", ph_login_pass: "Enter password",
+      ph_reg_user: "3-32 chars, letters/numbers/_/-", ph_reg_display: "Display name, e.g. Xiao Ming", ph_reg_pass: "At least 6 characters", ph_reg_pass2: "Confirm password",
+      dash_title: "Dashboard", dash_welcome: "Welcome back. Your command center for viral product videos 👋",
+      dash_products_label: "Product Stock", dash_products_desc: "Products on file",
+      dash_output_label: "Total Output", dash_output_desc: "Videos completed",
+      dash_today_label: "Today's Fire", dash_today_desc: "Videos added today",
+      dash_rendering_label: "Rendering", dash_rendering_desc: "Tasks in progress",
+      dash_quick_actions: "Quick Actions",
+      qa_new_hit_title: "New Hit", qa_new_hit_desc: "Start from product library or blank; AI writes the script & storyboard.",
+      qa_director_title: "AI Director", qa_director_desc: "Describe needs in chat; Director mode breaks down candidates.",
+      qa_clone_title: "Clone Video", qa_clone_desc: "Upload a hit video, replicate its storyboard 1:1.",
+      dash_showcase: "Latest Showcase", dash_view_all: "View All →",
+      pacing_title: "Video Rhythm & Duration", pacing_badge: "Golden rhythm template · hard-locked beats",
+      auth_platform_hint: "Internal collaboration platform · Please login or register to continue",
+      auth_login: "Login", auth_register: "Register", auth_login_btn: "Login", auth_register_btn: "Register",
+      auth_hint: "Registering means this account is for internal collaboration only",
+      auth_user: "Username", auth_pass: "Password", auth_displayname: "Display name (nickname)", auth_confirmpass: "Confirm password",
+      video_close: "Close", btn_exit: "Logout", btn_close_sw: "🔌 Close App",
+      q_elapsed: "⏱️ Elapsed: ", q_eta: "⏳ ETA: ", loading: "Loading...", no_match: "No matching results", wait_candidates: "⏸️ Waiting for candidate selection",
+      log_loading: "Loading…", log_failed: "Failed to load log", log_empty: "No execution log yet",
+      view_log: "📋 View Execution Log",
+      empty_showcase: "No videos produced yet. Create your first hit in the Studio 🚀", load_failed: "Failed to load. Refresh to retry",
     }
   },
   t(key) {
@@ -1888,9 +1972,12 @@ const GenerateModule = {
     });
     cards += `</div>`;
 
+    const lockedZh = `🔒 已锁定 <b>${rules.length}</b> 段黄金节奏(共 ${total}s)。AI 分镜数量、时长与最终剪辑将<b>严格卡点</b>此时间轴。`;
+    const lockedEn = `🔒 Locked <b>${rules.length}</b> golden-rhythm segment(s) (total ${total}s). AI shot count, duration & final edit will <b>strictly snap</b> to this timeline.`;
+    const lockedText = I18nModule.lang === 'en' ? lockedEn : lockedZh;
     container.innerHTML = bar + cards +
       `<div style="margin-top:8px;font-size:10.5px;color:var(--text-muted);line-height:1.5;">
-        🔒 已锁定 <b>${rules.length}</b> 段黄金节奏(共 ${total}s)。AI 分镜数量、时长与最终剪辑将<b>严格卡点</b>此时间轴。
+        ${lockedText}
       </div>`;
   },
 
@@ -2132,8 +2219,8 @@ const GenerateModule = {
     });
 
     // Language switch (V20.1: 持久化到 localStorage + 高亮)
-    document.getElementById('langZh').addEventListener('click', () => { I18nModule.setLang('zh'); this.refreshPills(); });
-    document.getElementById('langEn').addEventListener('click', () => { I18nModule.setLang('en'); this.refreshPills(); });
+    document.getElementById('langZh').addEventListener('click', () => { I18nModule.setLang('zh'); this.refreshPills(); if (CloneModule.initialized) CloneModule.refreshPills(); if (typeof DashboardModule !== 'undefined') DashboardModule.renderTip(); });
+    document.getElementById('langEn').addEventListener('click', () => { I18nModule.setLang('en'); this.refreshPills(); if (CloneModule.initialized) CloneModule.refreshPills(); if (typeof DashboardModule !== 'undefined') DashboardModule.renderTip(); });
 
     // Confirm modal
     document.getElementById('confirmCancel').addEventListener('click', () => {
@@ -2985,7 +3072,7 @@ const ProductsModule = {
     );
     tbody.innerHTML = '';
     if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">无匹配结果</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">${I18nModule.t('no_match')}</td></tr>`;
       return;
     }
     filtered.forEach(p => {
@@ -3304,15 +3391,15 @@ const QueueModule = {
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
           <div style="display:flex;gap:16px;font-size:12px;color:var(--text-muted);">
-            <span>⏱️ 已耗时: <b class="q-elapsed" data-start-ts="${startTsAttr}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${elapsedText}</b></span>
-            <span>⏳ 预计剩余: <b class="q-eta" data-start-ts="${startTsAttr}" data-eta="${etaSec}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${etaText}</b></span>
+            <span>${I18nModule.t('q_elapsed')}<b class="q-elapsed" data-start-ts="${startTsAttr}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${elapsedText}</b></span>
+            <span>${I18nModule.t('q_eta')}<b class="q-eta" data-start-ts="${startTsAttr}" data-eta="${etaSec}"${frozenAttr} style="color:var(--text-primary);font-variant-numeric:tabular-nums;">${etaText}</b></span>
           </div>
           <span class="pct-text" style="font-size:13px;font-weight:600;color:var(--accent-color);">${pct}%</span>
         </div>
         <div class="progress-bar" style="margin-top:8px;"><div class="progress-fill" style="width:${pct}%;"></div></div>
 
         <div style="margin-top:12px;">
-          <button class="btn-secondary" style="font-size:12px;padding:6px 10px;" onclick="QueueModule.toggleLog('${item.task_id}')">📋 查看执行日志</button>
+          <button class="btn-secondary" style="font-size:12px;padding:6px 10px;" onclick="QueueModule.toggleLog('${item.task_id}')">${I18nModule.t('view_log')}</button>
         </div>
         <div id="qlog-${item.task_id}" class="log-panel" style="display:none;margin-top:8px;padding:8px 10px;background:var(--bg-tertiary);border-radius:8px;max-height:180px;overflow:auto;"></div>
 
@@ -3356,7 +3443,7 @@ const QueueModule = {
     });
     html += '</div>';
     if (st === 'awaiting_selection') {
-      html += '<div style="margin-top:6px;font-size:11px;color:var(--accent-color);">⏸️ 等待选择候选素材</div>';
+      html += '<div style="margin-top:6px;font-size:11px;color:var(--accent-color);">' + I18nModule.t('wait_candidates') + '</div>';
     }
     return html;
   },
@@ -3370,19 +3457,19 @@ const QueueModule = {
     if (open) return;
     const cached = this._logsCache[taskId];
     if (cached) { this._renderLog(panel, cached); return; }
-    panel.innerHTML = '<div class="log-line">加载中…</div>';
+    panel.innerHTML = '<div class="log-line">' + I18nModule.t('log_loading') + '</div>';
     fetch('/api/projects/' + taskId).then(r => r.json()).then(d => {
       const logs = d.logs || [];
       this._logsCache[taskId] = logs;
       this._renderLog(panel, logs);
     }).catch(() => {
-      panel.innerHTML = '<div class="log-line" style="color:var(--danger-color);">日志加载失败</div>';
+      panel.innerHTML = '<div class="log-line" style="color:var(--danger-color);">' + I18nModule.t('log_failed') + '</div>';
     });
   },
 
   _renderLog(panel, logs) {
     if (!logs.length) {
-      panel.innerHTML = '<div class="log-line">暂无执行日志</div>';
+      panel.innerHTML = '<div class="log-line">' + I18nModule.t('log_empty') + '</div>';
       return;
     }
     panel.innerHTML = logs.map(l => {
@@ -3428,6 +3515,10 @@ const CloneModule = {
   videoFile: null,
   imageFiles: [],
   initialized: false,
+  // V20.1: Logo 品牌动画状态(克隆页独立一份)
+  logoEnabled: true,
+  selectedLogoPosition: 'head_tail',
+  selectedLogoAnimation: 'fade',
 
   t(key) { return I18nModule.t(key); },
 
@@ -3466,6 +3557,87 @@ const CloneModule = {
       const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
       if (files.length) this.handleImageSelect(files);
     });
+
+    // V20.1: 用字典填充材质/比例下拉(替代硬编码中文 option, 保证中英切换翻译)
+    this.populateSelects();
+    this.renderLogoPills();
+    const logoEnabled = document.getElementById('cloneLogoEnabled');
+    const logoDuration = document.getElementById('cloneLogoDuration');
+    const logoDurVal = document.getElementById('cloneLogoDurVal');
+    if (logoEnabled) {
+      logoEnabled.addEventListener('change', (e) => { this.logoEnabled = e.target.checked; });
+    }
+    if (logoDuration) {
+      logoDuration.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (logoDurVal) logoDurVal.textContent = v.toFixed(1) + 's';
+      });
+    }
+  },
+
+  // V20.1: 填充材质/比例下拉(复用 material_labels/ar_labels 字典)
+  populateSelects() {
+    const matSel = document.getElementById('cloneMaterial');
+    if (matSel) {
+      matSel.innerHTML = '';
+      Object.entries(I18nModule.t('material_labels')).forEach(([k, v]) => {
+        const o = document.createElement('option');
+        o.value = k; o.textContent = v;
+        matSel.appendChild(o);
+      });
+      matSel.value = 'other';
+    }
+    const arSel = document.getElementById('cloneAspectRatio');
+    if (arSel) {
+      arSel.innerHTML = '';
+      Object.entries(I18nModule.t('ar_labels')).forEach(([k, v]) => {
+        const o = document.createElement('option');
+        o.value = k; o.textContent = v;
+        arSel.appendChild(o);
+      });
+      arSel.value = '9:16';
+    }
+  },
+
+  // V20.1: 克隆页 Logo 位置/动画 pills
+  renderLogoPills() {
+    const posMap = {
+      none: this.t('logo_pos_none'), head: this.t('logo_pos_head'),
+      tail: this.t('logo_pos_tail'), head_tail: this.t('logo_pos_head_tail'),
+      watermark: this.t('logo_pos_watermark'),
+    };
+    const animMap = {
+      fade: this.t('logo_anim_fade'), zoom: this.t('logo_anim_zoom'),
+      slide: this.t('logo_anim_slide'), none: this.t('logo_anim_none'),
+    };
+    const posContainer = document.getElementById('cloneLogoPosPills');
+    const animContainer = document.getElementById('cloneLogoAnimPills');
+    if (posContainer) {
+      posContainer.innerHTML = '';
+      Object.keys(posMap).forEach(pos => {
+        const pill = document.createElement('div');
+        pill.className = 'pill' + (this.selectedLogoPosition === pos ? ' active' : '');
+        pill.innerText = posMap[pos];
+        pill.onclick = () => { this.selectedLogoPosition = pos; this.renderLogoPills(); };
+        posContainer.appendChild(pill);
+      });
+    }
+    if (animContainer) {
+      animContainer.innerHTML = '';
+      Object.keys(animMap).forEach(anim => {
+        const pill = document.createElement('div');
+        pill.className = 'pill' + (this.selectedLogoAnimation === anim ? ' active' : '');
+        pill.innerText = animMap[anim];
+        pill.onclick = () => { this.selectedLogoAnimation = anim; this.renderLogoPills(); };
+        animContainer.appendChild(pill);
+      });
+    }
+  },
+
+  // V20.1: 语言切换时刷新克隆页(下拉选项 + Logo pills 重新翻译)
+  refreshPills() {
+    this.populateSelects();
+    this.renderLogoPills();
   },
 
   handleVideoSelect(file) {
@@ -3534,6 +3706,11 @@ const CloneModule = {
     formData.append('enable_voiceover', document.getElementById('cloneVoiceover').checked);
     formData.append('reference_video', this.videoFile);
     this.imageFiles.forEach(f => formData.append('image_file', f));
+    // V20.1: Logo 品牌动画
+    formData.append('logo_enabled', this.logoEnabled ? 'true' : 'false');
+    formData.append('logo_position', this.logoEnabled ? this.selectedLogoPosition : 'none');
+    formData.append('logo_duration', String(document.getElementById('cloneLogoDuration') ? parseFloat(document.getElementById('cloneLogoDuration').value) : 2.0));
+    formData.append('logo_animation', this.logoEnabled ? this.selectedLogoAnimation : 'none');
 
     try {
       const resp = await fetch('/api/projects/clone', { method: 'POST', body: formData });
@@ -3958,12 +4135,19 @@ async function handleRetryComposite(taskId, btn) {
 // V16.0 Dashboard Module
 // ======================================================================
 const DashboardModule = {
-  _tips: [
+  _tipsZh: [
     "💡 提示：尝试用「玻璃材质」搭配「电影级光影」，让产品质感提升 200%！",
     "💡 爆款公式：痛点钩子(3秒) + 产品特写(5秒) + 使用场景(15秒) + 行动号召(7秒)。",
     "💡 提示：竖屏 9:16 在 TikTok 完播率更高，搭配「🔥动感」BGM 更易引爆。",
     "💡 试试「拍同款」：上传一条爆款视频，AI 帮你 1:1 复刻分镜结构。",
     "💡 提示：多语言(英/泰/印尼)一键生成，轻松铺量出海。"
+  ],
+  _tipsEn: [
+    "💡 Tip: Pair \"Glass\" material with cinematic lighting to boost product texture by 200%!",
+    "💡 Viral formula: pain-hook (3s) + product close-up (5s) + usage scene (15s) + CTA (7s).",
+    "💡 Tip: 9:16 vertical gets higher TikTok completion; add an upbeat BGM to go viral.",
+    "💡 Try \"Clone Video\": upload a hit, AI replicates its storyboard 1:1.",
+    "💡 Tip: one-click multi-language (EN/TH/ID) generation to scale overseas."
   ],
 
   load() {
@@ -4009,19 +4193,19 @@ const DashboardModule = {
   async loadRecent() {
     const grid = document.getElementById('dashRecent');
     if (!grid) return;
-    grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);"><span class="spinner"></span> 加载中...</div>`;
+    grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);"><span class="spinner"></span> ${I18nModule.t('loading')}</div>`;
     try {
       const resp = await fetch('/api/history?page=1&size=8');
       const data = await resp.json();
       const items = (data.items || []).filter(i => i.final_video_url).slice(0, 4);
       if (items.length === 0) {
-        grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);">还没有成功产出的视频，去工作台生成第一个爆款吧 🚀</div>`;
+        grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);">${I18nModule.t('empty_showcase')}</div>`;
         return;
       }
       grid.innerHTML = '';
       items.forEach(it => grid.appendChild(this._recentCard(it)));
     } catch (e) {
-      grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);">加载失败，请刷新重试</div>`;
+      grid.innerHTML = `<div class="col-span-4" style="text-align:center;padding:40px;color:var(--text-muted);">${I18nModule.t('load_failed')}</div>`;
     }
   },
 
@@ -4068,8 +4252,9 @@ const DashboardModule = {
   renderTip() {
     const el = document.getElementById('dashTip');
     if (!el) return;
-    const idx = new Date().getDate() % this._tips.length;
-    el.textContent = this._tips[idx];
+    const arr = I18nModule.lang === 'en' ? this._tipsEn : this._tipsZh;
+    const idx = new Date().getDate() % arr.length;
+    el.textContent = arr[idx];
   }
 };
 
@@ -4199,9 +4384,9 @@ const AuthModule = {
           <p style="font-size:13px;font-weight:600;color:var(--text-primary);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(user.display_name || user.username)}</p>
           <p style="font-size:10px;color:var(--text-muted);margin:0;">@${escapeHtml(user.username)}</p>
         </div>
-        <button class="btn-secondary" style="font-size:11px;padding:6px 10px;flex-shrink:0;" onclick="AuthModule.logout()">退出</button>
+        <button class="btn-secondary" style="font-size:11px;padding:6px 10px;flex-shrink:0;" onclick="AuthModule.logout()" data-i18n="btn_exit">退出</button>
       </div>
-      <button class="btn-secondary" style="width:100%;font-size:12px;padding:8px;margin-top:8px;" onclick="AuthModule.closeSoftware()">🔌 关闭软件</button>`;
+      <button class="btn-secondary" style="width:100%;font-size:12px;padding:8px;margin-top:8px;" onclick="AuthModule.closeSoftware()" data-i18n="btn_close_sw">🔌 关闭软件</button>`;
   },
 
   switchTab(tab) {
