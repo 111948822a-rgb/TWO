@@ -10,16 +10,16 @@ services:
     name: ai-video-commerce
     runtime: docker
     dockerfilePath: ./Dockerfile
-    # 显式声明启动命令,与 Dockerfile 一致
+    # 显式声明启动命令,与 Dockerfile CMD 一致(均走 start.sh:打印 [boot] 环境 + gunicorn)
     # 单 worker:后台 asyncio 流水线任务只存活于拉起它的 worker 进程内。
     # 多 worker(-w 2)时,处理 POST 的 worker 一旦被 Render 回收(OOM/部署/重启),
     # 在跑的任务会静默死亡(进度条永久卡死),且并发任务会争抢 SQLite 写入锁。
     # 单 worker 既消除"任务随 worker 死亡"的根因,又避免跨进程写锁竞争;
     # 配合启动自愈(拉起孤儿任务),部署/重启后任务可自动续跑。流水线为异步 IO 密集,
     # 单 worker 可在等待 API 期间正常服务前端请求,不存在阻塞问题。
-    # --timeout 提到 1200s:单条视频流水线(含 3 段视频生成)最长可达 ~20 分钟,
+    # --timeout 1200(start.sh 内):单条视频流水线(含 5 段视频生成)最长可达 ~20 分钟,
     # 避免 gunicorn 误判 worker 失活而杀掉正在跑的任务。
-    startCommand: gunicorn app.main:app -w 1 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --timeout 1200
+    startCommand: sh /app/start.sh
     # 健康检查:前端页面挂在 "/" ,返回 200 即视为存活
     healthCheckPath: /
     envVars:

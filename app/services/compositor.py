@@ -82,17 +82,18 @@ def _get_ffmpeg_exe() -> str:
 
 
 # V11.0 视频比例 -> 目标分辨率映射(基准 1080p)
-# 云端(Render 免费实例 CPU/内存极小)编码 1080p 竖屏极易超时/OOM,
-# 故云端把长边压到 1280(=720x1280 竖屏 / 1280x720 横屏),像素量降为原 1080p 的
-# 1/2.25 → 编码速度约 2 倍、内存峰值约 1/2,彻底规避合成卡死/OOM;本地桌面保持原画质。
+# 云端(Render 免费实例 0.1 CPU / 512MB)编码 1080p/720p 竖屏在多分镜串行下仍偏慢,
+# 易逼近硬上限或被部署重启打断。故云端把长边压到 854(=480x854 竖屏 / 854x480 横屏),
+# 像素量仅为原 1080p 的 ~1/4.5 → 编码速度约 4 倍、内存峰值约 1/4,单次合成从 ~10min
+# 压到 ~3-4min,大幅缩小"被部署打断"的窗口;本地桌面保持原画质。
 _ASPECT_RESOLUTIONS = {
     "9:16": (1080, 1920),   # 竖屏/TikTok
     "16:9": (1920, 1080),   # 横屏/YouTube
     "1:1": (1080, 1080),    # 方形/Feed
 }
 
-# 云端编码长边上限(检测到 RENDER_EXTERNAL_URL 即视为云端):长边压到 1280
-_CLOUD_ENCODE_LONG_EDGE = 1280
+# 云端编码长边上限(检测到 RENDER_EXTERNAL_URL 即视为云端):长边压到 854(≈480p)
+_CLOUD_ENCODE_LONG_EDGE = 854
 _LOCAL_ENCODE_LONG_EDGE = 1920  # 本地保持原 1080p 基准(长边 1920)
 
 
@@ -103,7 +104,7 @@ def _encode_long_edge() -> int:
 def _get_aspect_resolution(aspect_ratio: str) -> tuple[int, int]:
     """根据视频比例返回目标 (width, height),默认 9:16。
 
-    云端(Render)把长边压到 1280(不放大;1:1 等原尺寸已较小则保持),本地桌面保持原画质,
+    云端(Render)把长边压到 854(≈480p,不放大;1:1 等原尺寸已较小则保持),本地桌面保持原画质,
     兼顾画质与编码速度/内存。返回偶数尺寸(H.264 兼容)。
     """
     base_w, base_h = _ASPECT_RESOLUTIONS.get(aspect_ratio, (1080, 1920))
@@ -933,7 +934,7 @@ def _align_scene_sync(
 
     # 中间编码(这是"对齐临时产物",会在最终合成阶段被 xfade 重新编码一遍,
     # 故此处用更激进的 crf=28 + ultrafast 大幅压低单分镜编码耗时与 CPU/内存占用,
-    # 成片画质由最终合成(crf=23 veryfast)保证,中间质量损失不可见)。
+    # 成片画质由最终合成(crf=23 ultrafast)保证,中间质量损失不可见)。
     out = ffmpeg.output(
         v, a, output_path,
         vcodec="libx264", crf=28, pix_fmt="yuv420p",
@@ -1260,11 +1261,13 @@ def _build_final_graph(
             final_audio = None
 
     # ---- 输出 ----
+    # 云端提速:最终合成用 ultrafast(比 veryfast 快约 2 倍),配合 480p 分辨率
+    # 把单次合成压到 ~3-4min,缩小被部署重启打断的窗口。CRF 维持画质。
     common = dict(
         vcodec="libx264",
         crf=settings.OUTPUT_CRF,
         pix_fmt="yuv420p",
-        preset="veryfast",
+        preset="ultrafast",
         r=settings.OUTPUT_FPS,
         **{"movflags": "+faststart"},
     )
@@ -1360,7 +1363,7 @@ def _compose_ultra_minimal(
     out = ffmpeg.output(
         vcat, output_path,
         vcodec="libx264", crf=23, pix_fmt="yuv420p",
-        preset="veryfast", r=settings.OUTPUT_FPS,
+        preset="ultrafast", r=settings.OUTPUT_FPS,
         **{"movflags": "+faststart"},
     )
     re_cmd = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
