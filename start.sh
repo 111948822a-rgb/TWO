@@ -11,7 +11,7 @@ echo "[boot] /app on sys.path: $(python -c 'import sys; print("/app" in sys.path
 echo "============================================================"
 
 exec gunicorn app.main:app \
-    -w 2 \
+    -w 1 \
     -k uvicorn.workers.UvicornWorker \
     -b 0.0.0.0:${PORT:-8000} \
     --timeout 300 \

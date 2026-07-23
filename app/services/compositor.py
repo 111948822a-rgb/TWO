@@ -365,8 +365,9 @@ _FFMPEG_FREEZE_SECONDS = 150
 
 # 全局注入 -threads,限制 ffmpeg 线程数,降低云端小内存实例(Render 512MB)OOM 风险。
 # ffmpeg 默认会按 CPU 核数开很多线程,多输入/多滤镜时内存峰值极高,是合成阶段
-# 拖垮 worker 的头号内存杀手。2 线程在免费实例上编码速度与多线程差异很小。
-_FFMPEG_THREADS = "2"
+# 拖垮 worker 的头号内存杀手。云端 512MB / 0.1 CPU 免费实例上,单线程即可,
+# 既能压住内存峰值避免 OOM,编码速度与多线程差异极小。
+_FFMPEG_THREADS = "1"
 
 # 合成阶段绝对硬上限(秒):无论冻结检测、单步 timeout 是否生效,合成整体超过该
 # 时长必定强制终止并报错。此上限独立于心跳保活(心跳只刷新 updated_at,无法使其失效),
@@ -983,12 +984,19 @@ async def _align_all_scenes(
 
     # 无配音时 audio_paths 为空,用 "" 占位
     ap_iter = iter(audio_paths) if has_audio else iter([""] * len(video_paths))
-    tasks = [
-        _one(s, vp, next(ap_iter))
-        for s, vp in zip(project.scenes, video_paths)
-    ]
-    aligned = await asyncio.gather(*tasks)
-    return list(aligned)
+    # ★ 串行对齐(关键 OOM 修复):云端 512MB 实例下,asyncio.gather 并行会同时
+    #   拉起 N 个 ffmpeg 子进程,内存瞬时打爆导致实例被 Render OOM 杀死(表现即
+    #   "卡在合成阶段、无报错、实例重启")。改为逐分镜串行,任意时刻仅 1 个 ffmpeg
+    #   在跑,内存峰值大幅下降;总时长受 _COMPOSITE_HARD_CAP 约束,不会无限挂起。
+    aligned: List[str] = []
+    total = len(project.scenes)
+    for idx, (s, vp) in enumerate(zip(project.scenes, video_paths), start=1):
+        logger.info(
+            "[Compositor] 音画对齐 进度 %d/%d [%s]",
+            idx, total, s.scene_id,
+        )
+        aligned.append(await _one(s, vp, next(ap_iter)))
+    return aligned
 
 
 # ---------------------------------------------------------------------------

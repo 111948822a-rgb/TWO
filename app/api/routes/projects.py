@@ -432,7 +432,7 @@ def start_watchdog() -> None:
     """在事件循环中启动看门狗后台任务(进程启动时调用一次)。"""
     try:
         asyncio.create_task(_watchdog_loop())
-        logger.info("[watchdog] 卡死任务自愈看门狗已启动(阈值=3600s)")
+        logger.info("[watchdog] 卡死任务自愈看门狗已启动(每120s扫描,按状态分阈值: %s)", _STALE_BY_STATUS)
     except RuntimeError as exc:
         # 无运行中的事件循环(如某些测试环境)时静默跳过
         logger.warning("[watchdog] 无法启动看门狗(无运行事件循环): %s", exc)

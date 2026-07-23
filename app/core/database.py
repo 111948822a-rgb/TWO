@@ -234,6 +234,20 @@ def upsert_project(
                  project_id, status, progress, creator_name)
 
 
+def _dt_to_iso(value) -> "str | None":
+    """将 datetime / 字符串统一转为 ISO 字符串;None 返回 None。
+
+    VideoProject 从 DB 反序列化后,时间字段可能是字符串(日志曾报
+    'str' object has no attribute 'isoformat')。此处做兼容,避免心跳/
+    恢复同步时崩溃导致 updated_at 刷新失败(进而看门狗误判任务'健康')。
+    """
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
 def sync_project_from_model(
     project: Any,
     product_id: Optional[str] = None,
@@ -265,10 +279,10 @@ def sync_project_from_model(
             video_engine=getattr(project.output, "video_engine", None),
             product_id=product_id,
             creator_name=creator_name,
-            started_at=project.started_at.isoformat() if getattr(project, "started_at", None) else None,
-            completed_at=project.completed_at.isoformat() if getattr(project, "completed_at", None) else None,
+            started_at=_dt_to_iso(getattr(project, "started_at", None)),
+            completed_at=_dt_to_iso(getattr(project, "completed_at", None)),
             logs_json=logs_json,
-            created_at=project.created_at.isoformat() if hasattr(project.created_at, "isoformat") else str(project.created_at),
+            created_at=_dt_to_iso(project.created_at),
         )
     except Exception as exc:
         logger.error("[DB] 同步项目失败 %s: %s", getattr(project, "project_id", "?"), exc)
