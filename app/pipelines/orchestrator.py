@@ -295,6 +295,13 @@ async def stage_video_gen(project: VideoProject) -> None:
     video_gen = VideoGenerator()
 
     for scene in project.scenes:
+        # V19.1: 逐分镜进度落库,前端可见"正在生成分镜视频",消除 vid_gen "卡住"错觉
+        project.logs.append(StageLog(
+            ts=datetime.utcnow().isoformat(),
+            stage=ProjectStatus.VID_GEN.value,
+            message=f"正在生成分镜 {scene.scene_id} 视频(约1-5分钟)…",
+        ))
+        _sync_db(project)
         if n_candidates > 1 and scene.candidate_images:
             # V9.0: 候选池模式 - 为每张候选图片生成视频
             scene.candidate_videos = []
@@ -770,6 +777,19 @@ async def run_pipeline(
         message="🚀 任务开始执行",
     ))
 
+    # V19.1: 流水线级心跳 —— 整条 pipeline 运行期间每 30s 刷新 updated_at,
+    # 确保 vid_gen / img_gen 等长耗时阶段不会被看门狗误判卡死(阈值见
+    # _STALE_BY_STATUS),也让前端看到任务持续活跃,消除"卡在某阶段不动"的错觉。
+    # 合成阶段另有更频繁的 compositor 心跳,二者并存无害(均为幂等写库)。
+    async def _pipeline_heartbeat() -> None:
+        while True:
+            await asyncio.sleep(30)
+            try:
+                _sync_db(project)
+            except Exception:  # noqa: BLE001
+                pass
+
+    hb_task = asyncio.create_task(_pipeline_heartbeat())
     try:
         for i, stage in enumerate(flow):
             # ================= 阶段流转关键修复 (V-STATE-FLOW) =================
@@ -854,6 +874,7 @@ async def run_pipeline(
             "[Task %s] ❌ Pipeline 失败: %s", task_id, exc
         )
     finally:
+        hb_task.cancel()
         project.touch()
 
     return project

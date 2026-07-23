@@ -479,16 +479,17 @@ async def auto_resume_interrupted(max_retries: int = _AUTO_RESUME_MAX) -> list:
 
 
 # 各阶段"卡死"陈旧阈值(秒):updated_at 超过该值仍活跃 → 判定为孤儿/卡死,标记 FAILED。
-# 设计原则:合成阶段已有"心跳"(每 20s 刷新 updated_at),故健康编码绝不会触发;
-# 仅当 worker 已死(updated_at 冻结)才会被捕获。阈值按各阶段真实最长耗时设定,
-# 避免误杀(尤其 VID_GEN 单阶段可长达 ~30 分钟)。
+# 设计原则:V19.1 起整条流水线有 30s 心跳(orchestrator._pipeline_heartbeat),
+# 合成阶段另有 20s 心跳,故健康编码绝不会触发本看门狗;仅当 worker 已死
+# (updated_at 冻结)才会被捕获。阈值按各阶段真实最长耗时设定,避免误杀
+# (尤其 VID_GEN 5 段串行可达 ~50 分钟,故阈值放大到 3600s)。
 _STALE_BY_STATUS = {
     "compositing": 600,   # 合成:心跳保活,健康编码持续刷新;冻结即 worker 死
     "audio_gen": 600,
     "img_gen": 900,
     "scripting": 600,
     "pending": 600,
-    "vid_gen": 1800,      # 视频生成:串行 3 段,单段轮询上限 ~10min,留足余量
+    "vid_gen": 3600,      # 视频生成:5 段串行,单段轮询上限 ~10min;心跳每30s刷新,此值为兜底
 }
 
 
