@@ -1,7 +1,12 @@
 FROM python:3.10-slim
 
+# MALLOC_ARENA_MAX=2: glibc 默认按 8×CPU核 创建 malloc arena,多线程 Python 进程
+#   RSS 虚高 30-80MB;限制为 2 后显著压低常驻内存(512MB 小实例必备)。
+# MALLOC_TRIM_THRESHOLD_=65536: 空闲堆超过 64KB 即归还 OS,避免峰值后 RSS 不回落。
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    MALLOC_ARENA_MAX=2 \
+    MALLOC_TRIM_THRESHOLD_=65536
 
 WORKDIR /app
 

@@ -75,6 +75,44 @@ _composite_semaphore = asyncio.Semaphore(1)
 
 
 # ---------------------------------------------------------------------------
+# V21: 内存观测 + 主动归还(512MB 小实例保命三件套之二)
+# ---------------------------------------------------------------------------
+
+def _rss_mb() -> float:
+    """读取当前进程常驻内存 RSS(MB)。Linux 读 /proc,其他平台返回 -1。零依赖。"""
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0  # kB -> MB
+    except Exception:  # noqa: BLE001
+        pass
+    return -1.0
+
+
+def _release_memory(tag: str) -> None:
+    """强制垃圾回收 + glibc malloc_trim,把峰值后的空闲堆真正归还 OS。
+
+    Python 的 gc.collect 只回收对象,glibc 仍可能扣着空闲页不还(RSS 不降);
+    malloc_trim(0) 强制归还。在合成等内存峰值阶段结束后调用,
+    使实例回到低水位,给下一个任务留足余量。
+    """
+    import ctypes
+    import gc
+    before = _rss_mb()
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:  # noqa: BLE001
+        pass  # 非 Linux/glibc(本地 Windows 开发)静默跳过
+    after = _rss_mb()
+    if before > 0:
+        logger.info(
+            "[Memory] %s 后主动归还内存: RSS %.0fMB -> %.0fMB", tag, before, after
+        )
+
+
+# ---------------------------------------------------------------------------
 # V-XRAY: 全链路产物"生死追踪"
 #   用户核心质疑: HappyHorse / TTS 返回云端 URL,代码是否真的把文件下载到
 #   本地 /data/storage? 这里在**每个阶段完成后**暴力打印每个分镜所有中间
@@ -681,6 +719,7 @@ async def stage_compositing(project: VideoProject) -> None:
         compositor = Compositor()
         # 全局串行:512MB 实例上同时只跑 1 个合成,杜绝并发 ffmpeg 导致 OOM
         async with _composite_semaphore:
+            logger.info("[Memory] 合成开始前 RSS=%.0fMB", _rss_mb())
             output_path = await compositor.composite(project)
     except Exception as _comp_exc:  # noqa: BLE001
         # [用户要求] 状态机兜底保活:合成抛出异常时,立刻把具体错误(含 FFmpeg
@@ -696,6 +735,9 @@ async def stage_compositing(project: VideoProject) -> None:
     finally:
         # 恢复原始配音开关(避免降级污染持久化状态)
         project.input.enable_voiceover = original_voiceover
+        # V21: 合成是全流程内存峰值,结束后(无论成败)立即归还空闲堆给 OS,
+        # 让实例回到低水位,给下一个任务/自动续跑留足余量。
+        _release_memory("合成")
 
     logger.info(
         "[%s] 阶段⑤ 完成,最终视频: %s (时长 %.1fs)",
@@ -797,6 +839,13 @@ async def run_pipeline(
                 _sync_db(project)
             except Exception:  # noqa: BLE001
                 pass
+            # V21: 心跳同时打印 RSS 内存水位,Render Logs 里直接可见离 512MB 多远,
+            # OOM 前必有征兆(RSS 持续 >450MB),便于事后定位是哪个阶段吃的内存。
+            rss = _rss_mb()
+            if rss > 0:
+                logger.info(
+                    "[Memory] 心跳 RSS=%.0fMB (stage=%s)", rss, project.status
+                )
 
     hb_task = asyncio.create_task(_pipeline_heartbeat())
     try:

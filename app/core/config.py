@@ -103,6 +103,20 @@ if os.getenv("RENDER_EXTERNAL_URL"):
     # 云端免费实例 CPU/内存极小:放宽最终成片 CRF(20→23)以加速编码、降低 OOM 风险,
     # 短视频平台对 23 画质完全可接受;本地桌面仍用 20 保高画质。
     settings.OUTPUT_CRF = 23
+    # ★ 内存优化(V21): 云端帧率 30→24, 编码像素吞吐/内存 -20%, 短视频观感无差异;
+    #   本地桌面保持 30fps。
+    settings.OUTPUT_FPS = 24
+    # ★★ 内存优化(V21)最关键一条: 云端强制跳过 rembg AI 抠图!
+    #   rembg 首次调用会把 U2Net 模型(~176MB)+onnxruntime 加载进主进程,
+    #   RSS 直接飙升 ~300MB 且【永不释放】——之后基线内存 ~450MB,
+    #   任何 ffmpeg 一启动即打爆 512MB → 表现为"有概率 OOM"(取决于本次
+    #   实例生命周期内是否有人上传过非透明图触发过抠图)。
+    #   云端改走"白底转透明"纯 PIL 兜底(白底商品图效果可接受, 内存 ~10MB);
+    #   如实例内存充足(付费实例)可设环境变量 AIVS_FORCE_MATTING=1 恢复 AI 抠图。
+    if os.getenv("AIVS_FORCE_MATTING") != "1":
+        settings.SKIP_MATTING = True
+        print("☁️ [Config] 云端模式: 已禁用 rembg AI 抠图(省 ~300MB 常驻内存), "
+              "改用白底转透明兜底; 付费实例可设 AIVS_FORCE_MATTING=1 恢复", flush=True)
     print(
         f"☁️ [Config] 云端模式(Render): 存储锁定 /data "
         f"(DATA={settings.DATA_ROOT}, STORAGE={settings.STORAGE_ROOT})",
