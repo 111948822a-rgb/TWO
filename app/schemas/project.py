@@ -305,6 +305,13 @@ class VideoProject(BaseModel):
     technical_traceback: Optional[str] = None
     # V17.3: 执行日志流(各阶段开始/完成/失败记录,前端折叠展示)
     logs: List[StageLog] = Field(default_factory=list)
+    # V19.0: 开机自动续跑计数 —— 实例重启/部署会杀死在跑的后台任务,
+    #   开机时自动续跑被打断的合成/视频生成任务;此字段记录已自动续跑次数,
+    #   达上限(auto_resume_interrupted 的 max_retries)则判定为真失败、不再续跑,
+    #   防止"每次部署都无限循环续跑同一失败任务"。随 scenes_data 持久化。
+    auto_retry_count: int = Field(
+        0, ge=0, description="被实例重启打断后的自动续跑次数(达上限则标记失败)"
+    )
 
     def touch(self) -> None:
         """更新 updated_at 时间戳,在任何状态变更后调用。"""

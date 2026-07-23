@@ -391,6 +391,93 @@ def _fail_orphan(task_id: str, status: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# V19.0 开机自动续跑:把被实例重启/部署打断的合成/视频生成任务自动拉起
+# ---------------------------------------------------------------------------
+
+# 自动续跑并发信号量:续跑任务受此约束**串行**执行,任一时刻仅 1 个在跑,
+# 把免费实例的 ffmpeg 内存峰值压到最低(与启动自愈"不并发拉起重型任务"原则一致)。
+_resume_semaphore = asyncio.Semaphore(1)
+
+# 同一任务被重启打断后最多自动续跑的次数,超过则判定为"真失败"(非单纯被打断),
+# 标记为 FAILED 不再续跑,防止每次部署都无限循环续跑同一失败任务。
+_AUTO_RESUME_MAX = 2
+
+# 开机可安全自动续跑的轻量阶段(单 ffmpeg 串行 / 外部 API 轮询,内存风险低)。
+# 其余重型阶段(尤其 img_gen 的 rembg 抠图吃数百 MB)按原行为标记 FAILED 待重生成。
+_AUTO_RESUME_STATUSES = ("compositing", "vid_gen")
+
+
+async def _auto_resume_one(task_id: str, status: str) -> None:
+    """串行续跑单个被中断的可恢复任务(compositing / vid_gen)。
+
+    受 _resume_semaphore 约束,任一时刻仅 1 个续跑任务在跑,内存峰值可控。
+    续跑前递增 auto_retry_count 并随阶段推进落库,超过上限的任务由调用方改标记失败。
+    """
+    async with _resume_semaphore:
+        project = load_project(task_id)
+        if not project:
+            logger.warning("[auto-resume] 任务 %s 无法从 SQLite 重建,跳过", task_id)
+            return
+        from_stage = _RESUME_STAGE_FOR_STATUS.get(status)
+        project.error = None
+        project.technical_traceback = None
+        # 递增自动续跑计数(防循环):落库发生在 _run_safe -> run_pipeline 阶段推进时
+        project.auto_retry_count = (getattr(project, "auto_retry_count", 0) or 0) + 1
+        logger.info(
+            "[auto-resume] 任务 %s 第 %d 次自动续跑(原状态=%s, 续跑阶段=%s)",
+            task_id, project.auto_retry_count, status,
+            (from_stage.value if from_stage else "从头 SCRIPTING"),
+        )
+        # _run_safe 内部按阶段推进并落库(含 auto_retry_count),异常也安全收尾
+        await _run_safe(project, from_stage=from_stage)
+
+
+async def auto_resume_interrupted(max_retries: int = _AUTO_RESUME_MAX) -> list:
+    """开机自动恢复:把被实例重启/部署打断的合成/视频生成任务自动续跑。
+
+    设计取舍(站点可用 > 任务自动续跑):
+      - compositing / vid_gen:轻量(合成=单 ffmpeg 串行;视频生成=外部 API 轮询),
+        自动续跑安全,且串行执行以约束内存。
+      - scripting / img_gen / audio_gen / pending:重型(尤其 img_gen 的 rembg 抠图
+        吃数百 MB),并发拉起易 OOM 杀死唯一 worker -> 502 循环,故保持原行为
+        标记为 FAILED,由用户在 UI 重新生成。
+
+    续跑限定次数(max_retries),真失败的任务不再无限循环续跑。
+    续跑任务以**后台**协程串行执行,不阻塞进程启动(站点立即可用)。
+
+    Returns: 被自动续跑的任务 task_id 列表。
+    """
+    from app.core.database import get_active_tasks
+
+    active = get_active_tasks()  # 开机时所有活跃任务都是孤儿
+    resumed: list = []
+    for task_id, st in active:
+        try:
+            if st in _AUTO_RESUME_STATUSES:
+                project = load_project(task_id)
+                if not project:
+                    logger.warning("[auto-resume] 任务 %s 无法重建,跳过", task_id)
+                    continue
+                n = getattr(project, "auto_retry_count", 0) or 0
+                if n >= max_retries:
+                    logger.warning(
+                        "[auto-resume] 任务 %s 已达自动续跑上限(%d),改为标记失败",
+                        task_id, max_retries,
+                    )
+                    _fail_orphan(task_id, st)
+                    continue
+                resumed.append(task_id)
+                # 后台串行续跑(信号量约束并发),不阻塞启动
+                asyncio.create_task(_auto_resume_one(task_id, st))
+            else:
+                # 重型阶段:保持原"标记失败待用户重生成"行为
+                _fail_orphan(task_id, st)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[auto-resume] 处置任务 %s 失败(已忽略): %s", task_id, exc)
+    return resumed
+
+
 # 各阶段"卡死"陈旧阈值(秒):updated_at 超过该值仍活跃 → 判定为孤儿/卡死,标记 FAILED。
 # 设计原则:合成阶段已有"心跳"(每 20s 刷新 updated_at),故健康编码绝不会触发;
 # 仅当 worker 已死(updated_at 冻结)才会被捕获。阈值按各阶段真实最长耗时设定,

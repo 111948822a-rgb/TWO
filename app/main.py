@@ -85,21 +85,24 @@ app.include_router(diagnose.router)
 # 后台 asyncio 流水线任务只存活于拉起它的 worker 进程内。当 Gunicorn worker 因
 # 部署 / 重启 / OOM 被回收时,在跑的任务会被静默杀死(无错误、无完成),导致前端
 # 进度条永远卡在某阶段。进程刚启动时任何"活跃"状态的任务都必定是孤儿。
-# 注意(关键取舍): 启动自愈**不再并发拉起重型 run_pipeline**(图像生成 rembg 吃数百
-# MB + 视频生成,在 Render 小内存实例上并发会 OOM 杀死唯一 worker -> 502 崩溃循环),
-# 而是将孤儿标记为 FAILED,由用户在 UI 重新生成。看门狗同样仅标记、不拉起。
+# 关键取舍: 启动自愈**不再并发拉起重型 run_pipeline**(图像生成 rembg 吃数百
+# MB + 视频生成,在 Render 小内存实例上并发会 OOM 杀死唯一 worker -> 502 崩溃循环)。
+# 轻量阶段(compositing / vid_gen)改为**串行、限次自动续跑**(无需用户手动重生成);
+# 重型阶段(scripting / img_gen / audio_gen / pending,尤其 rembg 抠图)保持原行为
+# 标记为 FAILED,由用户在 UI 重新生成。看门狗仅标记陈旧任务、不拉起。
 @app.on_event("startup")
 async def _startup_self_heal():
     try:
         from app.api.routes import projects as _projects
-        recovered = _projects.recover_orphaned_tasks()
-        if recovered:
+        # V19.0: 开机自动续跑被打断的轻量任务(合成/视频生成),串行限次,不阻塞启动
+        resumed = _projects.auto_resume_interrupted()
+        if resumed:
             logging.getLogger(__name__).info(
-                "[Self-Heal] 启动处置 %d 个孤儿任务(标记 FAILED, 待用户重新生成): %s",
-                len(recovered), recovered,
+                "[Self-Heal] 开机自动续跑 %d 个被中断任务(合成/视频生成,串行限次): %s",
+                len(resumed), resumed,
             )
         else:
-            logging.getLogger(__name__).info("[Self-Heal] 启动未发现需处置的孤儿任务")
+            logging.getLogger(__name__).info("[Self-Heal] 启动无需自动续跑的任务")
         _projects.start_watchdog()
     except Exception as exc:  # noqa: BLE001
         logging.getLogger(__name__).warning("[Self-Heal] 启动自愈异常(已忽略): %s", exc)
