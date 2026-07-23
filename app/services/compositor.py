@@ -93,7 +93,9 @@ _ASPECT_RESOLUTIONS = {
 }
 
 # 云端编码长边上限(检测到 RENDER_EXTERNAL_URL 即视为云端):长边压到 854(≈480p)
-_CLOUD_ENCODE_LONG_EDGE = 854
+# ★ V23:可用环境变量 AIVS_CLOUD_LONG_EDGE 进一步下探(如 640≈360p)换取更大内存余量,
+#   无需改代码即可在 Render 面板调节;数值越小内存峰值越低、画质越糊。
+_CLOUD_ENCODE_LONG_EDGE = int(os.getenv("AIVS_CLOUD_LONG_EDGE", "854") or "854")
 _LOCAL_ENCODE_LONG_EDGE = 1920  # 本地保持原 1080p 基准(长边 1920)
 
 
@@ -832,13 +834,29 @@ def _align_scene_sync(
     # V11.0 动态比例适配(模糊背景填充,杜绝拉伸变形):
     W, H = _get_aspect_resolution(aspect_ratio)
     src = v_in.video
-    bg = (
-        src
-        .filter("scale", W, H, force_original_aspect_ratio="increase")
-        .filter("crop", W, H)
-        .filter("boxblur", 15, 1)            # 虚化背景(半径 15 足够,云端免费实例上比 40 快约 2.7x)
-        .filter("eq", brightness=-0.18, saturation=0.75)  # 轻微压暗,衬托前景
-    )
+    # ★ V23 内存优化:云端用"缩小→模糊→放大"的廉价虚化。boxblur 直接作用于全尺寸
+    #   WxH 帧时,内存/CPU 与像素量成正比;先把背景缩到 1/4 边长(1/16 面积)再模糊,
+    #   放大后视觉上与全尺寸模糊几乎无差(反正是虚化背景),但显著压低对齐阶段
+    #   单个 ffmpeg 的内存峰值与耗时。本地桌面保持原全尺寸高质量模糊。
+    if os.getenv("RENDER_EXTERNAL_URL"):
+        bw = max(2, (W // 4) // 2 * 2)
+        bh = max(2, (H // 4) // 2 * 2)
+        bg = (
+            src
+            .filter("scale", bw, bh, force_original_aspect_ratio="increase")
+            .filter("crop", bw, bh)
+            .filter("boxblur", 6, 1)          # 小尺寸上半径 6 即足够糊
+            .filter("scale", W, H)            # 放大回目标尺寸(模糊已成型)
+            .filter("eq", brightness=-0.18, saturation=0.75)
+        )
+    else:
+        bg = (
+            src
+            .filter("scale", W, H, force_original_aspect_ratio="increase")
+            .filter("crop", W, H)
+            .filter("boxblur", 15, 1)         # 本地全尺寸高质量虚化
+            .filter("eq", brightness=-0.18, saturation=0.75)  # 轻微压暗,衬托前景
+        )
     fg = src.filter("scale", W, H, force_original_aspect_ratio="decrease")
     v = ffmpeg.filter([bg, fg], "overlay", x="(W-w)/2", y="(H-h)/2")
     v = v.filter("setsar", 1)
@@ -1615,6 +1633,103 @@ def _compose_ultra_minimal(
     _verify_product(output_path, "L4_极简拼接")
 
 
+def _compose_cloud_lowmem(
+    project: VideoProject,
+    aligned_paths: List[str],
+    bgm_path: str,
+    output_path: str,
+    ffmpeg_exe: str,
+    total_duration: float,
+    has_voiceover: bool,
+    deadline: "float | None" = None,
+) -> None:
+    """☁️ V23 云端超低内存合成(512MB 实例专用,合成阶段 OOM 的根治手段)。
+
+    彻底避开 xfade 多输入滤镜图——xfade 链会把全部 N 个对齐分镜作为**同时打开的
+    输入**(N 个解码器 + xfade 帧缓冲 + drawtext 同时驻留),内存峰值随分镜数
+    线性上升,是 512MB 实例"卡在合成阶段/被 OOM 重启"的头号元凶。
+
+    改为两步,任意时刻内存都极小:
+      1. concat demuxer + -c copy 顺序拼接对齐后的分镜(逐个输入,几乎不解码、
+         不重编码,内存 ~数十 MB;对齐产物已内含每分镜旁白音频)。
+      2. 若有 BGM,再做一遍轻量混音:视频流 **-c:v copy 不重编码**,仅叠加 BGM
+         (仅 2 个输入,内存极小)。
+
+    代价:分镜之间由 xfade 交叉淡入淡出退化为**硬切**。在 512MB 实例上这是
+    "稳定出片 vs 偶发 OOM"之间最划算的取舍;字幕仍随 SRT 提供下载。
+    此路径失败时,上层会自动回退到标准 xfade 降级链(L2/L3/L4),不影响可用性。
+    """
+    valid = [
+        p for p in aligned_paths
+        if p and os.path.exists(p) and os.path.getsize(p) > 0
+    ]
+    if len(valid) < 1:
+        raise RuntimeError("[Compositor] 云端低内存合成: 无有效对齐分镜")
+
+    temp_dir = Path(output_path).parent
+    concat_list = temp_dir / "_cloud_lowmem_list.txt"
+    with open(concat_list, "w", encoding="utf-8") as f:
+        for p in valid:
+            ap = os.path.abspath(p).replace("\\", "/").replace("'", "'\\''")
+            f.write(f"file '{ap}'\n")
+
+    have_bgm = bool(bgm_path) and Path(bgm_path).exists()
+    # 有 BGM 时先拼接到临时文件,再混音到 output_path;无 BGM 时直接拼到 output_path
+    stitched = str(temp_dir / "_cloud_lowmem_stitched.mp4") if have_bgm else output_path
+
+    # ---- 第 1 步:concat demuxer -c copy(视频 + 每分镜旁白;硬切,近零内存) ----
+    copy_cmd = [
+        ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
+        "-i", str(concat_list), "-c", "copy",
+        "-movflags", "+faststart", stitched,
+    ]
+    _run_ffmpeg_cmd(
+        copy_cmd, "云端低内存拼接(copy)", timeout=600,
+        watch_output=stitched, deadline=deadline,
+    )
+    _verify_product(stitched, "云端低内存拼接")
+
+    if not have_bgm:
+        logger.warning("[Compositor] ☁️ 云端低内存合成完成(无 BGM): %s", output_path)
+        return
+
+    # ---- 第 2 步:叠加 BGM(视频 -c:v copy 不重编码,仅 2 输入,内存极小) ----
+    try:
+        dur = round(max(0.1, total_duration), 3)
+        if has_voiceover:
+            # 视频自带旁白音轨([0:a]) + BGM 压低音量后 amix
+            fc = (
+                f"[1:a]atrim=0:{dur},asetpts=PTS-STARTPTS,volume=0.30[bgm];"
+                f"[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+            )
+        else:
+            # 无旁白:BGM 作为唯一音轨
+            fc = f"[1:a]atrim=0:{dur},asetpts=PTS-STARTPTS,volume=0.5[aout]"
+        mux_cmd = [
+            ffmpeg_exe, "-y",
+            "-i", stitched,
+            "-stream_loop", "-1", "-i", bgm_path,
+            "-filter_complex", fc,
+            "-map", "0:v", "-map", "[aout]",
+            "-c:v", "copy", "-c:a", "aac", "-ab", "192k",
+            "-shortest", "-movflags", "+faststart", output_path,
+        ]
+        _run_ffmpeg_cmd(
+            mux_cmd, "云端低内存BGM混音", timeout=600,
+            watch_output=output_path, deadline=deadline,
+        )
+        _verify_product(output_path, "云端低内存BGM混音")
+        logger.warning("[Compositor] ☁️ 云端低内存合成完成(含 BGM): %s", output_path)
+    except Exception as bgm_exc:  # noqa: BLE001
+        # BGM 混音失败不阻断:把已拼接好的无 BGM 视频作为最终产物
+        logger.warning(
+            "[Compositor] 云端 BGM 混音失败,退化为无 BGM 成片: %s", bgm_exc
+        )
+        import shutil
+        shutil.move(stitched, output_path)
+        _verify_product(output_path, "云端低内存合成(降级无BGM)")
+
+
 def _compose_final_sync(
     project: VideoProject,
     aligned_paths: List[str],
@@ -1726,6 +1841,31 @@ def _compose_final_sync(
         logger.info(
             "[Compositor] ☁️ 云端模式: 跳过 L1 重滤镜档位,从 L2 起步(防免费实例合成过慢/卡死)"
         )
+
+    # ☁️ V23 云端首选:超低内存 concat 合成,彻底避开 N 输入 xfade 的内存峰值
+    #   (合成阶段 OOM 根治手段)。成功即出片;失败自动回退到下方 xfade 降级链,
+    #   保证可用性不降级。
+    if os.getenv("RENDER_EXTERNAL_URL"):
+        try:
+            logger.info(
+                "[Compositor] ☁️ 云端首选低内存合成(concat 硬切,避开 xfade 多输入解码峰值)"
+            )
+            _compose_cloud_lowmem(
+                project, aligned_paths, bgm_path, output_path, ffmpeg_exe,
+                total_duration, has_voiceover, deadline=deadline,
+            )
+            logger.warning(
+                "[Compositor] ✅ 云端低内存合成成功: %s", output_path
+            )
+            final_path = _attach_logo(
+                project, output_path, output_path, ffmpeg_exe, deadline=deadline
+            )
+            return final_path
+        except Exception as low_exc:  # noqa: BLE001
+            logger.error(
+                "[Compositor] ⚠️ 云端低内存合成失败,回退到标准 xfade 降级链(L2/L3/L4): %s",
+                low_exc,
+            )
 
     last_exc: Exception | None = None
     for lvl_name, opts in levels:
