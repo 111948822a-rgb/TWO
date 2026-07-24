@@ -836,6 +836,18 @@
             <input id="sellingPoints" type="text" class="input-base" placeholder="请输入核心卖点，逗号分隔" data-i18n-ph="ph_studio_points" />
           </div>
 
+          <!-- V21.0 Product Category & Core Features (必填,防形变/主体一致性核心) -->
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;">
+              <span data-i18n="product_category">产品类型与核心特征</span>
+              <span style="color:#ff5a78;font-weight:700;">*</span>
+              <span style="font-size:11px;color:var(--text-muted);margin-left:6px;" data-i18n="product_category_badge">防形变 · 主体一致性</span>
+            </label>
+            <textarea id="productCategory" class="input-base" rows="2" style="resize:vertical;min-height:52px;"
+              placeholder="请详细描述产品是什么及其核心外观（如：黑色机械键盘、RGB背光、银色铝合金鼠标）"
+              data-i18n-ph="ph_product_category"></textarea>
+          </div>
+
           <!-- Target Audience -->
           <div style="margin-bottom:14px;">
             <label style="display:block;font-size:12px;font-weight:500;color:var(--text-secondary);margin-bottom:6px;" data-i18n="target_audience">目标受众</label>
@@ -1450,6 +1462,9 @@ const I18nModule = {
       // V22.0: 占位符 / 首页 / 登录注册 / 节奏 / JS 串
       ph_clone_name: "如：便携保温杯", ph_clone_points: "如：24h保温,316不锈钢",
       ph_studio_name: "请输入产品名称", ph_studio_points: "请输入核心卖点，逗号分隔", ph_studio_audience: "请输入目标受众", ph_image_url: "或输入图片 URL",
+      product_category: "产品类型与核心特征", product_category_badge: "防形变 · 主体一致性",
+      ph_product_category: "请详细描述产品是什么及其核心外观（如：黑色机械键盘、RGB背光、银色铝合金鼠标）",
+      err_no_category: "请填写「产品类型与核心特征」（如：黑色机械键盘、RGB背光），这是防止 AI 画面形变的关键信息",
       ph_search: "搜索产品名称...",
       ph_new_name: "请输入产品名称", ph_new_points: "卖点1,卖点2,卖点3", ph_new_images: "https://example.com/img.png (逗号分隔)",
       ph_login_user: "请输入用户名", ph_login_pass: "请输入密码",
@@ -1565,6 +1580,9 @@ const I18nModule = {
       // V22.0: placeholders / dashboard / auth / pacing / JS strings
       ph_clone_name: "e.g. Portable Thermos", ph_clone_points: "e.g. 24h warm-keep, 316 steel",
       ph_studio_name: "Enter product name", ph_studio_points: "Selling points, comma-separated", ph_studio_audience: "Target audience", ph_image_url: "Or paste image URL",
+      product_category: "Product Category & Core Features", product_category_badge: "Anti-morph · Subject consistency",
+      ph_product_category: "Describe what the product is and its core appearance (e.g. black mechanical keyboard, RGB backlight, silver aluminum mouse)",
+      err_no_category: "Please fill in \"Product Category & Core Features\" (e.g. black mechanical keyboard, RGB backlight). It is essential to prevent AI morphing artifacts.",
       ph_search: "Search product name...",
       ph_new_name: "Enter product name", ph_new_points: "Point1, Point2, Point3", ph_new_images: "https://example.com/img.png (comma-separated)",
       ph_login_user: "Enter username", ph_login_pass: "Enter password",
@@ -2100,6 +2118,11 @@ const GenerateModule = {
       }
       if (inp.product_name) document.getElementById('productName').value = inp.product_name;
       if (inp.selling_points) document.getElementById('sellingPoints').value = (inp.selling_points || []).join(', ');
+      // V21.0: 回填产品类型与核心特征
+      if (inp.product_category_and_features) {
+        const pcEl = document.getElementById('productCategory');
+        if (pcEl) pcEl.value = inp.product_category_and_features;
+      }
       if (inp.target_audience) document.getElementById('targetAudience').value = inp.target_audience || '';
       if (inp.duration_target_sec) {
         document.getElementById('duration').value = inp.duration_target_sec;
@@ -2293,6 +2316,13 @@ const GenerateModule = {
   onSubmit() {
     if (this.selectedLangs.length === 0) { alert(this.t('err_no_lang')); return; }
     if (this.selectedVibes.length === 0) { alert(this.t('err_no_vibe')); return; }
+    // V21.0: 产品类型与核心特征必填(防形变/主体一致性的核心输入)
+    const pcEl = document.getElementById('productCategory');
+    if (!pcEl || !pcEl.value.trim()) {
+      alert(this.t('err_no_category'));
+      if (pcEl) pcEl.focus();
+      return;
+    }
 
     if (this.directorMode) {
       this.generateScript();
@@ -2314,6 +2344,8 @@ const GenerateModule = {
     const formData = new FormData();
     formData.append('product_name', document.getElementById('productName').value);
     formData.append('selling_points', document.getElementById('sellingPoints').value);
+    // V21.0: 产品类型与核心特征(防形变/主体一致性)
+    formData.append('product_category_and_features', document.getElementById('productCategory').value.trim());
     formData.append('target_audience', document.getElementById('targetAudience').value);
     formData.append('duration_target_sec', document.getElementById('duration').value);
     formData.append('style', this.selectedStyle);
@@ -2366,6 +2398,8 @@ const GenerateModule = {
     const formData = new FormData();
     formData.append('product_name', document.getElementById('productName').value);
     formData.append('selling_points', document.getElementById('sellingPoints').value);
+    // V21.0: 产品类型与核心特征(防形变/主体一致性)
+    formData.append('product_category_and_features', document.getElementById('productCategory').value.trim());
     formData.append('target_audience', document.getElementById('targetAudience').value);
     formData.append('duration_target_sec', document.getElementById('duration').value);
     formData.append('style', this.selectedStyle);

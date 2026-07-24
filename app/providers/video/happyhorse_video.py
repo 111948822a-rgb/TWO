@@ -30,7 +30,7 @@ import httpx
 from app.core.config import settings
 from app.providers.video.base import IVideoProvider, VideoResult
 from app.utils.oss_client import is_oss_configured, upload_image_to_oss
-from app.utils.prompt_templates import VIDEO_QUALITY_SUFFIX, truncate_prompt_safe
+from app.utils.prompt_templates import compose_final_video_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -272,15 +272,14 @@ class HappyHorseVideoProvider(IVideoProvider):
                 "video_prompt(运镜指令)为空,拒绝调用以避免默认推拉摇移"
             )
 
-        # V14.2: 强制追加画质增强后缀(保证即使 LLM 输出简短也含画质词)
-        final_prompt = f"{video_prompt.strip()}, {VIDEO_QUALITY_SUFFIX}"
-
-        # V16.1: 字数截断兜底,确保 prompt ≤150 词,避免 API Token 超限
-        original_word_count = len(final_prompt.split())
-        final_prompt = truncate_prompt_safe(final_prompt)
+        # V21.0 产品灵魂注入与防形变:统一经 compose_final_video_prompt 拼装。
+        # 该函数会:① 末尾强制追加 ANTI_DEFORMATION_SUFFIX 防形变咒语;
+        # ② 先截断正文再拼后缀(咒语永不被截断丢失);③ 总词数≤150 防 Token 超限。
+        original_word_count = len(video_prompt.split())
+        final_prompt = compose_final_video_prompt(video_prompt)
         final_word_count = len(final_prompt.split())
         logger.info(
-            "[%s] video_prompt 词数: 原始=%d, 最终=%d (安全区间≤150)",
+            "[%s] video_prompt 词数: 原始=%d, 最终=%d (安全区间≤150, 已含防形变咒语)",
             self.PROVIDER_NAME, original_word_count, final_word_count,
         )
 

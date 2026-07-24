@@ -59,6 +59,42 @@ VIDEO_QUALITY_SUFFIX: str = (
     "depth of field, anamorphic lens flare, smooth motion"
 )
 
+# ===========================================================================
+# V21.0 防形变与物理规律"防御性咒语"(强制追加到每条最终 video_prompt 末尾)
+#   核心目标:防止 AI 生成过程中产品形变(键盘画成鼠标)、融化、多指、
+#   违背物理规律的光影 —— 这是"产品灵魂注入与防形变"改造的最后一道防线。
+# ===========================================================================
+ANTI_DEFORMATION_SUFFIX: str = (
+    "maintain exact product shape and proportions, strict object permanence, "
+    "no morphing, no melting, no extra fingers, realistic human hand interaction, "
+    "physically accurate lighting and shadows, photorealistic 8k commercial footage"
+)
+
+
+def compose_final_video_prompt(video_prompt: str) -> str:
+    """V21.0 拼装最终传给 HappyHorse 的 video_prompt(单一出口)。
+
+    强制规则:
+      1. 末尾必须追加 VIDEO_QUALITY_SUFFIX(画质增强)+ ANTI_DEFORMATION_SUFFIX
+         (防形变咒语),且咒语**绝不允许被截断丢失**。
+      2. 总词数控制在 ≤150(避免 API Token 超限):先截断正文,再拼后缀,
+         而不是拼完后缀再截断(旧 truncate_prompt_safe 会把咒语砍掉)。
+
+    Args:
+        video_prompt: LLM 生成/用户编辑后的运镜指令正文。
+
+    Returns:
+        末尾带防形变咒语的最终 prompt(总词数 ≤150)。
+    """
+    body = (video_prompt or "").strip().rstrip(",.;")
+    suffix = f"{VIDEO_QUALITY_SUFFIX}, {ANTI_DEFORMATION_SUFFIX}"
+    suffix_words = len(suffix.split())
+    max_body_words = max(30, 150 - suffix_words - 1)
+    body_words = body.split()
+    if len(body_words) > max_body_words:
+        body = " ".join(body_words[:max_body_words])
+    return f"{body}, {suffix}"
+
 # V14.2 禁止的保守运镜词汇(会导致画面像 PPT)
 FORBIDDEN_CONSERVATIVE_MOVES: list[str] = [
     "static shot",
@@ -113,35 +149,39 @@ VIDEO_DYNAMIC_ELEMENTS: list[str] = [
 ]
 
 # V16.1 模块3 — 精确运镜轨迹描述(强制注入,避免"smooth"等空泛词)
+# V21.0: 移除了推向特写/微距的轨迹(dolly-in to extreme close-up / macro push-in),
+#        近景极易导致 AI 细节崩坏;全部替换为保持中远景的轨迹。
 PRECISE_CAMERA_TRAJECTORIES: list[str] = [
-    "smooth 180-degree arc shot around the subject, maintaining perfect focus, slow and deliberate movement",
-    "slow dolly-in from wide to extreme close-up over 3 seconds, rack focus from background to product",
-    "FPV drone fly-through entering from the left frame, circling the subject twice, exiting right",
+    "smooth 180-degree arc shot around the subject at medium shot distance, maintaining perfect focus, slow and deliberate movement",
+    "slow dolly-out from medium shot to wide shot over 3 seconds, revealing the full product and environment",
+    "FPV drone fly-through entering from the left frame, circling the subject twice at a respectful distance, exiting right",
     "vertical crane shot rising from table level to overhead bird's-eye view, revealing the full environment",
-    "parallax tracking shot with foreground elements passing through frame, subject locked in center",
-    "macro slow-motion push-in to product surface texture, 120fps capturing light refraction",
+    "parallax tracking shot with foreground elements passing through frame, subject locked in center at medium shot",
+    "slow lateral tracking shot following the hand interaction, keeping the entire product and hand in frame",
 ]
 
 # V16.1 Few-Shot 示例(70-120 词黄金甜点区,供 LLM 模仿)
 # 注意:示例本身必须处于 70-120 词区间,否则 LLM 会模仿错误长度
+# V21.0: 示例升级 —— 开头锚定产品核心特征 + 中景景别 + 真实人手交互
+#        (旧示例以 "Extreme close-up" 开头,LLM 会模仿导致近景崩坏,已废除)
 IMAGE_PROMPT_EXAMPLE: str = (
-    "Extreme close-up of a crystal clear glass cup with condensation droplets, sharp specular "
-    "highlights on the rim, realistic caustics casting light patterns on the table. Minimalist "
-    "dark grey concrete background, out-of-focus botanical shadows from a gobo light, cinematic "
-    "depth of field with creamy bokeh. Warm 3200K key light from top-left, crisp cool rim light "
-    "separating subject from background, soft ambient occlusion in crevices. Shot on ARRI Alexa "
-    "65, 85mm prime lens, f/1.8 aperture, anamorphic lens flares, subtle film grain. Teal and "
-    "orange cinematic color grading, high contrast, moody atmosphere, photorealistic 8k resolution."
+    "Medium shot of a black mechanical keyboard with RGB backlight resting on a walnut desk, a "
+    "hand naturally poised over the keycaps in typing position, the entire black mechanical "
+    "keyboard fully visible in frame with accurate proportions. Minimalist dark grey studio "
+    "background, out-of-focus monitor glow, cinematic depth of field. Warm 3200K key light from "
+    "top-left, crisp cool rim light separating subject from background, soft ambient occlusion "
+    "between keycaps. Shot on ARRI Alexa 65, 50mm prime lens, f/2.8 aperture, subtle film grain. "
+    "Teal and orange cinematic color grading, high contrast, photorealistic 8k resolution."
 )
 
 VIDEO_PROMPT_EXAMPLE: str = (
-    "Smooth 180-degree arc shot around the subject, maintaining perfect focus, slow deliberate "
-    "movement. Dust motes dancing in the light beam, subtle steam rising from the cup, light "
-    "caustics shifting on the surface. FPV drone fly-through entering left frame, circling twice, "
-    "exiting right with a rack focus from foreground to product. Parallax tracking with foreground "
-    "elements passing through frame, specular highlights gliding across the material. Particles "
-    "drifting through depth of field, anamorphic lens flares, teal and orange color grading, high "
-    "contrast, cinematic lighting, 8k, photorealistic, smooth motion."
+    "Medium shot, fingers rapidly typing on the keycaps of the black mechanical keyboard with RGB "
+    "backlight, natural one-hand motion, the entire keyboard and hand fully visible in frame, the "
+    "product keeps its exact shape throughout. Smooth 180-degree arc shot around the desk at "
+    "medium shot distance, slow deliberate movement, RGB light bleed shifting across the desk "
+    "surface, dust motes dancing in the monitor glow. Slow lateral tracking following the hand "
+    "interaction, specular highlights gliding across the aluminum frame, teal and orange color "
+    "grading, cinematic lighting, 8k, photorealistic, smooth motion."
 )
 
 # ===========================================================================
@@ -266,21 +306,52 @@ def build_script_system_prompt(
     visual_style: str = "photorealistic",
     product_material: str = "other",
     rhythm_rules: Optional[List[RhythmStage]] = None,
+    product_category_features: str = "",
 ) -> str:
     """构建文案生成的 System Prompt。
 
     V16.1:废除 150+ 词超长限制(导致 API Token 超限),改为 70-120 词黄金甜点区,
     并强制视觉与动态分离:image_prompt 侧重静态视觉,video_prompt 侧重物理动态与运镜。
 
+    V21.0 产品灵魂注入与防形变:
+        - 人设升级为"资深商业广告导演",强制真实人类使用动作(Action Directing)
+        - 景别控制(Shot Sizing):3C/键盘/鞋类/大电器禁止特写与近景
+        - 主体一致性:每个分镜的 visual prompt 必须反复锚定产品核心特征
+
     Args:
         image_count: 用户提供的产品图数量。>1 时启用多图分镜分配。
         language: 目标语言代码(en/th/id)。
         visual_style: V6.0 视觉风格(photorealistic/3d_render/anime/cyberpunk)。
         product_material: V14.0 产品材质(glass/metal/plastic/fabric/electronics/other)。
+        rhythm_rules: V18.0 Pacing Engine 节奏时间轴(可空)。
+        product_category_features: V21.0 产品类型与核心特征(防形变锚点,可空)。
     """
     lang_en, lang_zh = LANGUAGE_NAMES.get(language, ("English", "英语"))
     style_desc = VISUAL_STYLE_PROMPTS.get(visual_style, VISUAL_STYLE_PROMPTS["photorealistic"])
     material_desc = MATERIAL_LIGHTING_PROMPTS.get(product_material, MATERIAL_LIGHTING_PROMPTS["other"])
+
+    # V21.0 产品锚点描述:有则强注入,无则退化为产品名占位提示
+    anchor = (product_category_features or "").strip()
+    anchor_block = (
+        f"""
+【🔴 V21.0 产品身份锚点(Product Identity Anchor — 最高优先级之一)】
+用户提供的产品类型与核心特征:「{anchor}」
+这是防止 AI 形变的生命线,必须严格遵守:
+  1. 每个分镜的 image_prompt 和 video_prompt 都必须**开头就写出该产品的英文核心特征描述**
+     (如 "black mechanical keyboard with RGB backlight"),并在 prompt 中至少重复锚定 1 次。
+  2. 绝不允许在任何分镜中改变产品的类型、形状、颜色、材质 —— 键盘永远是键盘,
+     绝不能画成鼠标;鼠标永远是鼠标,绝不能画成肥皂。
+  3. 所有动作指导、景别选择都必须基于该产品的真实类型(见下方动作指导与景别控制)。
+"""
+        if anchor
+        else """
+【V21.0 产品身份锚点】
+用户未单独提供产品类型与核心特征,请从产品名称与卖点中自行提炼产品的英文核心特征短语
+(类型+颜色+材质,如 "black mechanical keyboard with RGB backlight"),
+并在每个分镜的 image_prompt 和 video_prompt 开头写出、prompt 中至少重复锚定 1 次,
+严禁在分镜之间改变产品的类型、形状、颜色、材质。
+"""
+    )
 
     # V18.0 Pacing Engine:节奏硬约束块 + JSON 分镜额外字段
     rhythm_block = build_rhythm_constraint_block(rhythm_rules or [], language=language)
@@ -303,12 +374,45 @@ def build_script_system_prompt(
 """
     image_index_field = '"image_index": 0,' if image_count > 1 else ""
 
-    return f"""你是一位好莱坞顶级摄影指导(Cinematographer)兼电商短视频导演,曾操刀 Apple/Tesla/Dyson 等顶级品牌广告。
-你对画面质感有极致追求,擅长用电影级光影、镜头语言和色彩科学,将普通产品拍出震撼大片感。
-你精通多语言营销文案,能用镜头语言激发购买欲。
+    return f"""你是一位资深商业广告导演(Senior Commercial Advertising Director),曾操刀 Apple/Tesla/Dyson/罗技/雷蛇 等顶级品牌的产品广告。
+你最痛恨两种废片:①全片只有空镜头和运镜、没有真实的人类使用动作;②产品在镜头间形变走样(键盘变鼠标、近景细节崩坏)。
+你的每一条分镜都必须像真实广告片场一样:有人的手在真实地使用产品,景别选择永远服务于"产品全貌清晰、动作真实可信"。
+你对画面质感有极致追求,擅长用电影级光影、镜头语言和色彩科学,将普通产品拍出震撼大片感,并精通多语言营销文案。
 
 【任务】
 根据用户提供的产品信息,创作一个带货短视频分镜脚本,严格输出 JSON。
+{anchor_block}
+【🔴 V21.0 动作指导铁律(Action Directing — 违反即判定失败)】
+绝不能只有空镜头或纯运镜!必须包含人手与产品的交互。
+1. 全片至少 2 个分镜(且包含核心展示分镜)必须描述**真实的人类使用动作**,动作必须与产品类型匹配:
+   - 键盘(keyboard) → "fingers rapidly typing on the keycaps"(手指快速敲击键帽)
+   - 鼠标(mouse) → "a hand gripping the mouse and gliding it across the desk"(手掌握住鼠标在桌面上滑动)
+   - 口红(lipstick) → "a wrist twisting to reveal the lipstick bullet"(手腕旋转展示膏体)
+   - 水杯(cup/tumbler) → "a hand lifting the cup and taking a sip"(手拿起杯子饮用)
+   - 耳机(headphones) → "hands placing the headphones over the ears"(双手戴上耳机)
+   - 服饰鞋类(apparel/shoes) → "a person walking naturally wearing the shoes"(自然穿着行走)
+   - 其他产品同理:根据产品类型写出最典型、最自然的使用动作
+2. 动作描述必须写进 video_prompt(动态),image_prompt 中对应写出手与产品的静态接触姿态。
+3. 手部动作必须简单、自然、单手或双手常规操作 —— 禁止复杂手势、抛接、快速翻转等 AI 易崩坏动作。
+4. 禁止全片纯产品悬浮旋转/纯光影空镜 —— 空镜最多只允许出现在开场钩子或结尾 CTA 一个分镜中。
+
+【🔴 V21.0 景别与镜头语言控制铁律(Shot Sizing — 违反即判定失败)】
+AI 生成近景/特写极易导致细节崩坏(键帽错乱、logo 扭曲、手指融化),因此:
+1. 对于键盘、鼠标、耳机等 3C 数码产品,以及鞋子、大家电(冰箱/洗衣机/空调等)、
+   结构复杂的产品:**强制禁止使用特写(Extreme Close-up / ECU)和近景(Close-up / CU)**,
+   必须使用**中景(Medium Shot)或全景(Wide Shot)**,确保产品全貌和手部动作完整入镜。
+2. 每个分镜的 image_prompt 和 video_prompt 必须显式写出景别关键词:
+   "medium shot" 或 "wide shot"(上述高风险产品),其他小件简单产品最多允许 "medium close-up"。
+3. 严禁出现以下词汇(高风险产品):"extreme close-up" "macro shot" "close-up of keycaps"
+   "tight shot" "detail shot of buttons"。
+4. 运镜轨迹同理:禁止 "dolly-in to extreme close-up" / "macro push-in" 这类推向特写的轨迹,
+   替换为环绕(arc shot)、平移跟踪(tracking shot)、缓慢后拉(dolly-out reveal)等保持中远景的轨迹。
+
+【🔴 V21.0 主体一致性强化(Subject Consistency — 违反即判定失败)】
+1. 每个分镜的 image_prompt 和 video_prompt 都必须**反复强调产品的核心特征**
+   (英文,如 "black mechanical keyboard with RGB backlight"):开头出现 1 次 + 正文再锚定 1 次。
+2. 相邻分镜之间产品的类型/颜色/形状/材质描述必须完全一致,严禁 AI 在后续分镜中把键盘画成鼠标。
+3. video_prompt 中必须包含 "the product keeps its exact shape" 或同义表述,强调物体恒常性。
 
 【输出格式】
 严格输出如下 JSON(不要任何额外文字、不要 markdown 代码块标记、不要解释):
@@ -408,28 +512,31 @@ video_prompt 侧重**物理动态与运镜**,不要重复 image_prompt 中的静
 【分镜数量】
 3-4 个分镜,总时长 12-20 秒。
 
-【V12.0 AI 崩坏防护 — 高风险画面绝对禁止(违反则失败)】
+【V21.0 AI 崩坏防护(取代旧 V12.0 规则)— 高风险画面绝对禁止(违反则失败)】
 在 image_prompt 和 video_prompt 中,绝对禁止描述以下高风险画面:
-- 复杂的人体手部动作:手部特写、手指交互、拿东西的特写、手部手势
-- 复杂的双脚走路动作:奔跑、跳跃、复杂步态
+- 手部/手指的**特写与微距**镜头(手允许出现,但只能在中景/全景中完整入镜)
+- 复杂手势:抛接产品、快速翻转、多指精细操作特写、双手交叉缠绕
+- 复杂的双脚走路动作:奔跑、跳跃、复杂步态(自然步行允许,须全景)
 - 剧烈的人物肢体运动:大幅挥臂、扭腰、快速转身
 - 多人密集互动场景(易导致肢体融合/错位)
+- 高风险产品(3C/鞋类/大家电)的任何特写/近景/微距镜头(见上方景别铁律)
 
-【V12.0 AI 崩坏防护 — 鼓励安全画面(必须优先使用)】
-请优先使用 AI 模型最擅长、最不容易出错的画面与运镜:
-- 静物展示(product still life display,产品居中展示)
-- 微距特写(macro shot, extreme close-up of product texture/detail)
+【V21.0 安全画面组合(必须优先使用)】
+请优先使用 AI 模型最不容易出错、且带真实使用感的画面与运镜:
+- 中景下的人机交互(medium shot: hands naturally typing / gripping / holding the product, full product visible)
+- 全景使用场景(wide shot: person using the product in a real environment)
 - 环境光影变化(light and shadow transition, sunlight shifting)
-- 产品悬浮旋转(product floating and rotating, 360 degree rotation)
-- 景深过渡(rack focus, depth of field transition)
-- 慢动作特写(slow motion close-up, capturing subtle details)
+- 环绕运镜(arc shot around the product and hands, keeping full product in frame)
+- 景深过渡(rack focus, depth of field transition — 不推近到特写)
+- 慢动作动作展示(slow motion of the hand interaction, medium shot)
+- 空镜/静物展示仅限开场钩子或结尾 CTA 一个分镜
 
-【V12.0 人物处理原则】
-如果必须出现人物,请按以下原则描述(避开手部):
-- 人物背影(person seen from behind, back view)
-- 人物远景(person in wide shot, distant figure, face blurred)
-- 仅展示人物躯干/局部(torso only, partial body, hands NOT visible)
-- 绝对禁止:手部特写、手指动作、人物正面手持产品的画面
+【V21.0 人物处理原则】
+出现人物时按以下原则描述(手允许入镜,但必须完整、自然、非特写):
+- 手与产品交互置于中景/全景中,手部完整入镜且姿态自然(one hand, natural grip, five fingers)
+- 人物背影或侧面(person seen from behind or side, face not the focus)
+- 人物远景(person in wide shot, distant figure)
+- 绝对禁止:手部特写/微距、断手悬空(必须有手臂延伸入镜)、面部大特写
 
 【风格】
 根据产品调性选择:生活化(日常场景)/专业测评(工作室)/戏剧化(冲突开场)。
@@ -464,35 +571,23 @@ def build_script_user_prompt(product: ProductInput) -> str:
         duration_line = f"目标时长:{product.duration_target_sec} 秒"
         scene_count_line = "请严格按 JSON 格式输出,3-4 个分镜。"
 
+    # V21.0: 产品类型与核心特征(防形变/主体一致性锚点)
+    category_line = (
+        f"产品类型与核心特征(必须作为每个分镜 prompt 的产品身份锚点,反复强调):{product.product_category_and_features}\n"
+        if (product.product_category_and_features or "").strip()
+        else ""
+    )
+
     return f"""请为以下产品创作带货短视频脚本:
 
 产品名称:{product.product_name}
 产品描述:{product.product_description}
-核心卖点:{selling_points}
+{category_line}核心卖点:{selling_points}
 目标受众:{product.target_audience or "通用"}
 视频风格:{product.style}
 {duration_line}
 产品图:{image_hint}
 目标语言:{lang_en}({lang_zh}) —— narration(旁白)必须用{lang_en}撰写,image_prompt 和 video_prompt 必须用英文(English)撰写,且每个 prompt 严格 70-120 英文词
 
-{scene_count_line}每个 image_prompt(静态视觉)和 video_prompt(动态运镜)都必须 70-120 英文词,不要超出 120 词以免 API Token 超限。"""
-
-
-def truncate_prompt_safe(prompt: str, max_words: int = 140) -> str:
-    """V16.1 字数截断兜底:如果 prompt > 150 词,截断前 max_words 词并补上画质后缀。
-
-    作为最后一道防线,在将 Prompt 传给底层 API 之前调用,
-    确保绝对不会触发 API 的超长报错(PromptTooLong / InvalidParameter)。
-
-    Args:
-        prompt: 原始 prompt 字符串。
-        max_words: 截断后保留的最大词数(默认 140)。
-
-    Returns:
-        截断后的 prompt(若原始 ≤150 词则原样返回)。
-    """
-    words = prompt.split()
-    if len(words) <= 150:
-        return prompt
-    truncated = " ".join(words[:max_words])
-    return f"{truncated}, high quality, 8k"
+{scene_count_line}每个 image_prompt(静态视觉)和 video_prompt(动态运镜)都必须 70-120 英文词,不要超出 120 词以免 API Token 超限。
+记住:必须包含真实的人类使用动作(手与产品的交互),高风险产品(3C/键盘/鼠标/鞋类/大家电)禁止特写与近景,每个 prompt 都要反复锚定产品核心特征。"""

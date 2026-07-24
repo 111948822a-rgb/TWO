@@ -534,6 +534,8 @@ def start_watchdog() -> None:
 async def create_project(
     product_name: str = Form(...),
     selling_points: str = Form(""),
+    # V21.0: 产品类型与核心特征(防形变/主体一致性锚点,前端必填)
+    product_category_and_features: str = Form(""),
     target_audience: str = Form(""),
     duration_target_sec: int = Form(15),
     style: str = Form("生活化"),
@@ -598,6 +600,7 @@ async def create_project(
         input={
             "product_name": product_name,
             "product_description": selling_points,
+            "product_category_and_features": product_category_and_features.strip(),
             "selling_points": sp,
             "target_audience": target_audience,
             "white_image_url": white_image_url,
@@ -644,6 +647,8 @@ async def create_project(
 async def create_batch(
     product_name: str = Form(...),
     selling_points: str = Form(""),
+    # V21.0: 产品类型与核心特征(防形变/主体一致性锚点,前端必填)
+    product_category_and_features: str = Form(""),
     target_audience: str = Form(""),
     duration_target_sec: int = Form(15),
     style: str = Form("生活化"),
@@ -773,6 +778,7 @@ async def create_batch(
                         input={
                             "product_name": product_name,
                             "product_description": selling_points,
+                            "product_category_and_features": product_category_and_features.strip(),
                             "selling_points": sp,
                             "target_audience": target_audience,
                             "white_image_url": white_image_url,
@@ -1033,6 +1039,8 @@ class ContinueGenerationRequest(BaseModel):
 async def generate_script(
     product_name: str = Form(...),
     selling_points: str = Form(""),
+    # V21.0: 产品类型与核心特征(防形变/主体一致性锚点,前端必填)
+    product_category_and_features: str = Form(""),
     target_audience: str = Form(""),
     duration_target_sec: int = Form(15),
     style: str = Form("生活化"),
@@ -1097,6 +1105,7 @@ async def generate_script(
         input={
             "product_name": product_name,
             "product_description": selling_points,
+            "product_category_and_features": product_category_and_features.strip(),
             "selling_points": sp,
             "target_audience": target_audience,
             "white_image_url": white_image_url,
@@ -1163,6 +1172,8 @@ async def generate_script(
 async def clone_video(
     product_name: str = Form(...),
     selling_points: str = Form(""),
+    # V21.0: 产品类型与核心特征(防形变/主体一致性锚点)
+    product_category_and_features: str = Form(""),
     target_audience: str = Form(""),
     style: str = Form("生活化"),
     language: str = Form("en"),
@@ -1254,6 +1265,7 @@ async def clone_video(
         input={
             "product_name": product_name,
             "product_description": selling_points,
+            "product_category_and_features": product_category_and_features.strip(),
             "selling_points": sp,
             "target_audience": target_audience,
             "white_image_url": white_image_url,

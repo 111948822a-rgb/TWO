@@ -85,6 +85,12 @@ class ProductInput(BaseModel):
 
     product_name: str = Field(..., description="产品名称")
     product_description: str = Field("", description="产品描述 / 核心卖点")
+    # V21.0 产品灵魂注入:产品类型与核心外观特征(如"黑色机械键盘、RGB背光、银色铝合金鼠标")
+    #   贯穿 LLM 脚本导演(动作指导/景别控制/主体一致性)与生图生视频 Prompt,
+    #   是防止 AI 把键盘画成鼠标、近景细节崩坏的核心输入。
+    product_category_and_features: str = Field(
+        "", description="产品类型与核心特征(防形变/主体一致性锚点)"
+    )
     selling_points: List[str] = Field(
         default_factory=list, description="卖点列表"
     )

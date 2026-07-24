@@ -182,12 +182,28 @@ class ScriptGenerator:
                 sum(float(s.duration or (s.end_time - s.start_time)) for s in rhythm_rules),
                 " | ".join(f"{s.stage_name}({s.duration:.1f}s)" for s in rhythm_rules),
             )
+        # V21.0 产品灵魂注入:产品类型与核心特征作为防形变/主体一致性锚点
+        category_features = (
+            project.input.product_category_and_features or ""
+        ).strip()
+        if category_features:
+            logger.info(
+                "[%s] [Product Anchor] 产品身份锚点已注入: %.80s",
+                project.project_id, category_features,
+            )
+        else:
+            logger.warning(
+                "[%s] [Product Anchor] 未提供产品类型与核心特征,"
+                "LLM 将从产品名/卖点自行提炼(防形变效果减弱)",
+                project.project_id,
+            )
         system_prompt = build_script_system_prompt(
             image_count=image_count,
             language=project.input.language,
             visual_style=project.input.visual_style,
             product_material=project.input.product_material,
             rhythm_rules=rhythm_rules,
+            product_category_features=category_features,
         )
         user_prompt = build_script_user_prompt(project.input)
 
