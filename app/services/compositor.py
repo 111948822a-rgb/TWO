@@ -44,6 +44,7 @@ import re
 import subprocess
 import threading
 import time
+import shutil
 from pathlib import Path
 from typing import List, Optional
 
@@ -1472,12 +1473,24 @@ def _attach_logo(
     pos = project.logo_position
     width, height = _get_aspect_resolution(project.input.aspect_ratio)
 
+    # 工作副本: 避免输出路径与输入路径相同导致 concat/filter 流式覆盖损坏。
+    # 云端低内存路径下 main_video_path == output_path,_attach_logo 若直接把
+    # output_path 同时作为 concat 输入与输出,ffmpeg 边读边写会截断输入 -> 最终
+    # 产物骤降为几十 KB(主体内容丢失)。先复制一份工作副本隔离读写。
+    logo_dir = Path(output_path).parent / "temp"
+    logo_dir.mkdir(parents=True, exist_ok=True)
+    work_main = main_video_path
+    if os.path.abspath(main_video_path) == os.path.abspath(output_path):
+        work_main = str(logo_dir / "_logo_main_work.mp4")
+        shutil.copy2(main_video_path, work_main)
+    final_tmp = str(logo_dir / "_logo_final_tmp.mp4")
+
     try:
         if pos == "watermark":
             # 右下角水印,透明度 0.5,占画面高度 10%
             wm_h = int(height * 0.10)
             cmd = [
-                ffmpeg_exe, "-y", "-i", main_video_path,
+                ffmpeg_exe, "-y", "-i", work_main,
                 "-loop", "1", "-i", logo_path,
                 "-filter_complex",
                 f"[1:v]format=rgba,colorchannelmixer=aa=0.5,scale=-2:{wm_h}[logo];"
@@ -1514,7 +1527,7 @@ def _attach_logo(
 
         # concat demuxer: 写 list, 先 -c copy 极速拼接
         list_path = logo_dir / "logo_concat_list.txt"
-        clips = [p for p in [head_clip, main_video_path, tail_clip] if p]
+        clips = [p for p in [head_clip, work_main, tail_clip] if p]
         with open(list_path, "w", encoding="utf-8") as f:
             for p in clips:
                 ap = os.path.abspath(p).replace("\\", "/").replace("'", "'\\''")
@@ -1522,11 +1535,12 @@ def _attach_logo(
 
         copy_cmd = [
             ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
-            "-i", str(list_path), "-c", "copy", output_path,
+            "-i", str(list_path), "-c", "copy", final_tmp,
         ]
         try:
             _run_ffmpeg_cmd(copy_cmd, "logo_concat_copy", timeout=120, deadline=deadline)
-            _verify_product(output_path, "logo_concat_copy")
+            _verify_product(final_tmp, "logo_concat_copy")
+            shutil.move(final_tmp, output_path)
             logger.warning(
                 "[Compositor] ✅ 已拼接 Logo 片头/片尾(档位=copy): %s", output_path
             )
@@ -1543,7 +1557,7 @@ def _attach_logo(
             *sum(zip(vstreams, astreams), ()), v=n_clips, a=n_clips
         )
         out = ffmpeg.output(
-            vcat, output_path,
+            vcat, final_tmp,
             vcodec="libx264", crf=23, pix_fmt="yuv420p",
             preset="ultrafast", r=settings.OUTPUT_FPS,
             acodec="aac", ab="192k",
@@ -1551,7 +1565,8 @@ def _attach_logo(
         )
         re_cmd = ffmpeg.compile(out, cmd=ffmpeg_exe, overwrite_output=True)
         _run_ffmpeg_cmd(re_cmd, "logo_concat_reencode", timeout=180, deadline=deadline)
-        _verify_product(output_path, "logo_concat_reencode")
+        _verify_product(final_tmp, "logo_concat_reencode")
+        shutil.move(final_tmp, output_path)
         logger.warning(
             "[Compositor] ✅ 已拼接 Logo 片头/片尾(档位=reencode): %s", output_path
         )
